@@ -16,6 +16,14 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     },
   },
+  build: {
+    // flag-icons ships ~540 small SVGs. Left to the default 4 kB inline limit
+    // Vite base64s nearly all of them into the render-blocking stylesheet
+    // (566 kB). Emitting them as files keeps the CSS small and lets the
+    // browser fetch only the handful of flags actually on screen.
+    assetsInlineLimit: (filePath: string) =>
+      filePath.includes('flag-icons') ? false : undefined,
+  },
   server: {
     // Option 1: Allow specific hosts or subdomains (wildcard supported)
     allowedHosts: [

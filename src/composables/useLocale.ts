@@ -1,6 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import { baseMessages, messages, type MessageKey } from '@/locales/messages'
-import { languageByCode, languages, type Language } from '@/locales/languages'
+import { isRtl as codeIsRtl, languageByCode, languages, type Language } from '@/locales/languages'
 
 const STORAGE_KEY = 'zetoo.locale.v1'
 const FALLBACK = 'en-GB'
@@ -31,10 +31,15 @@ const detect = (): string => {
 
 const locale = ref<string>(detect())
 
-/** Applies the locale to the document so screen readers and CSS see it too. */
+/**
+ * Applies the locale to the document so screen readers and CSS see it too.
+ * `dir` flips for Arabic, Hebrew, Persian, Urdu and the other RTL scripts,
+ * which is what makes Tailwind's logical properties lay the app out mirrored.
+ */
 export const applyLocale = () => {
   if (typeof document === 'undefined') return
   document.documentElement.lang = locale.value
+  document.documentElement.dir = codeIsRtl(locale.value) ? 'rtl' : 'ltr'
 }
 
 watch(
@@ -93,6 +98,7 @@ export function useLocale() {
     language,
     languages,
     isTranslated: computed(() => isTranslated(locale.value)),
+    isRtl: computed(() => codeIsRtl(locale.value)),
     setLocale,
     t,
     d,

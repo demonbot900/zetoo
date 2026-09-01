@@ -29,13 +29,13 @@
         <!-- Optional tab rail -->
         <nav
           v-if="tabs.length > 1"
-          class="flex gap-1 border-b border-gray-200 px-3 dark:border-gray-800 sm:px-4"
+          class="flex gap-1 overflow-x-auto border-b border-gray-200 px-3 no-scrollbar dark:border-gray-800 sm:px-4"
         >
           <button
             v-for="tab in tabs"
             :key="tab.id"
             type="button"
-            class="relative -mb-px border-b-2 px-3 py-3 text-theme-sm font-medium transition-colors"
+            class="relative -mb-px shrink-0 border-b-2 px-3 py-3 text-theme-sm font-medium transition-colors"
             :class="
               tab.id === activeTab
                 ? 'border-brand-500 text-brand-500'

@@ -43,6 +43,7 @@ const en = {
   'menu.signOut': 'Sign out',
   'language.label': 'Language',
   'language.hint': 'Sets the interface language plus date and number formats.',
+  'language.search': 'Search languages…',
   'language.translated': 'Translated',
   'language.untranslated': 'Dates and numbers follow this language; the interface text stays in English.',
 }
@@ -83,6 +84,7 @@ const de: Partial<typeof en> = {
   'menu.signOut': 'Abmelden',
   'language.label': 'Sprache',
   'language.hint': 'Legt die Sprache der Oberfläche sowie Datums- und Zahlenformate fest.',
+  'language.search': 'Sprache suchen…',
   'language.translated': 'Übersetzt',
   'language.untranslated':
     'Datums- und Zahlenformate folgen dieser Sprache; die Oberflächentexte bleiben auf Englisch.',
@@ -124,6 +126,7 @@ const fr: Partial<typeof en> = {
   'menu.signOut': 'Se déconnecter',
   'language.label': 'Langue',
   'language.hint': "Définit la langue de l'interface ainsi que les formats de date et de nombre.",
+  'language.search': 'Rechercher une langue…',
   'language.translated': 'Traduit',
   'language.untranslated':
     "Les dates et les nombres suivent cette langue ; les textes de l'interface restent en anglais.",
@@ -165,6 +168,7 @@ const es: Partial<typeof en> = {
   'menu.signOut': 'Cerrar sesión',
   'language.label': 'Idioma',
   'language.hint': 'Define el idioma de la interfaz y los formatos de fecha y número.',
+  'language.search': 'Buscar idioma…',
   'language.translated': 'Traducido',
   'language.untranslated':
     'Las fechas y los números siguen este idioma; los textos de la interfaz permanecen en inglés.',
@@ -206,6 +210,7 @@ const it: Partial<typeof en> = {
   'menu.signOut': 'Esci',
   'language.label': 'Lingua',
   'language.hint': "Imposta la lingua dell'interfaccia e i formati di data e numero.",
+  'language.search': 'Cerca lingua…',
   'language.translated': 'Tradotto',
   'language.untranslated':
     "Date e numeri seguono questa lingua; i testi dell'interfaccia restano in inglese.",
@@ -247,6 +252,7 @@ const pt: Partial<typeof en> = {
   'menu.signOut': 'Terminar sessão',
   'language.label': 'Idioma',
   'language.hint': 'Define o idioma da interface e os formatos de data e número.',
+  'language.search': 'Procurar idioma…',
   'language.translated': 'Traduzido',
   'language.untranslated':
     'As datas e os números seguem este idioma; os textos da interface permanecem em inglês.',
@@ -288,6 +294,7 @@ const nl: Partial<typeof en> = {
   'menu.signOut': 'Afmelden',
   'language.label': 'Taal',
   'language.hint': 'Bepaalt de taal van de interface en de datum- en getalnotatie.',
+  'language.search': 'Een taal zoeken…',
   'language.translated': 'Vertaald',
   'language.untranslated':
     'Datums en getallen volgen deze taal; de interfaceteksten blijven in het Engels.',
@@ -329,6 +336,7 @@ const pl: Partial<typeof en> = {
   'menu.signOut': 'Wyloguj się',
   'language.label': 'Język',
   'language.hint': 'Ustawia język interfejsu oraz formaty daty i liczb.',
+  'language.search': 'Szukaj języka…',
   'language.translated': 'Przetłumaczony',
   'language.untranslated':
     'Daty i liczby używają tego języka; teksty interfejsu pozostają po angielsku.',
@@ -370,6 +378,7 @@ const cs: Partial<typeof en> = {
   'menu.signOut': 'Odhlásit se',
   'language.label': 'Jazyk',
   'language.hint': 'Nastaví jazyk rozhraní a formáty data a čísel.',
+  'language.search': 'Hledat jazyk…',
   'language.translated': 'Přeloženo',
   'language.untranslated':
     'Data a čísla se řídí tímto jazykem; texty rozhraní zůstávají v angličtině.',
@@ -411,6 +420,7 @@ const da: Partial<typeof en> = {
   'menu.signOut': 'Log ud',
   'language.label': 'Sprog',
   'language.hint': 'Angiver sproget i brugerfladen samt dato- og talformater.',
+  'language.search': 'Søg efter sprog…',
   'language.translated': 'Oversat',
   'language.untranslated':
     'Datoer og tal følger dette sprog; teksterne i brugerfladen forbliver på engelsk.',
@@ -452,6 +462,7 @@ const sv: Partial<typeof en> = {
   'menu.signOut': 'Logga ut',
   'language.label': 'Språk',
   'language.hint': 'Anger gränssnittets språk samt datum- och talformat.',
+  'language.search': 'Sök språk…',
   'language.translated': 'Översatt',
   'language.untranslated':
     'Datum och tal följer det här språket; gränssnittstexterna förblir på engelska.',
@@ -493,6 +504,7 @@ const nb: Partial<typeof en> = {
   'menu.signOut': 'Logg ut',
   'language.label': 'Språk',
   'language.hint': 'Angir språket i grensesnittet samt dato- og tallformater.',
+  'language.search': 'Søk etter språk…',
   'language.translated': 'Oversatt',
   'language.untranslated':
     'Datoer og tall følger dette språket; grensesnittstekstene forblir på engelsk.',
@@ -534,6 +546,7 @@ const fi: Partial<typeof en> = {
   'menu.signOut': 'Kirjaudu ulos',
   'language.label': 'Kieli',
   'language.hint': 'Määrittää käyttöliittymän kielen sekä päivämäärä- ja numeromuodot.',
+  'language.search': 'Hae kieltä…',
   'language.translated': 'Käännetty',
   'language.untranslated':
     'Päivämäärät ja luvut noudattavat tätä kieltä; käyttöliittymän tekstit pysyvät englanniksi.',
@@ -575,6 +588,7 @@ const tr: Partial<typeof en> = {
   'menu.signOut': 'Çıkış yap',
   'language.label': 'Dil',
   'language.hint': 'Arayüz dilini ve tarih ile sayı biçimlerini belirler.',
+  'language.search': 'Dil ara…',
   'language.translated': 'Çevrildi',
   'language.untranslated':
     'Tarihler ve sayılar bu dili izler; arayüz metinleri İngilizce kalır.',
@@ -616,6 +630,7 @@ const uk: Partial<typeof en> = {
   'menu.signOut': 'Вийти',
   'language.label': 'Мова',
   'language.hint': 'Задає мову інтерфейсу, а також формати дат і чисел.',
+  'language.search': 'Пошук мови…',
   'language.translated': 'Перекладено',
   'language.untranslated':
     'Дати й числа використовують цю мову; тексти інтерфейсу залишаються англійськими.',

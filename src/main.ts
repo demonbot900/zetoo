@@ -1,3 +1,6 @@
+// SVG country flags for the language switcher — emoji flags do not render on
+// Windows and cannot be sized. https://flagicons.lipis.dev/
+import 'flag-icons/css/flag-icons.min.css'
 import './assets/main.css'
 // Import Swiper styles
 import 'swiper/css'

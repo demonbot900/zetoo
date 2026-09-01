@@ -20,7 +20,14 @@
       @keydown="onTriggerKeydown"
     >
       <span class="flex min-w-0 items-center gap-2">
-        <span v-if="selected?.icon" class="shrink-0 text-base leading-none">{{ selected.icon }}</span>
+        <span
+          v-if="selected?.flag"
+          class="fi shrink-0 rounded-xs shadow-xs ring-1 ring-black/10 dark:ring-white/15"
+          :class="[`fi-${selected.flag}`, flagSizeClass]"
+        ></span>
+        <span v-else-if="selected?.icon" class="shrink-0 text-base leading-none">{{
+          selected.icon
+        }}</span>
         <span
           v-if="selected?.color"
           class="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -28,9 +35,10 @@
         ></span>
         <span
           class="truncate"
-          :class="
-            selected ? 'text-gray-800 dark:text-white/90' : 'text-gray-400 dark:text-white/30'
-          "
+          :class="[
+            selected ? 'text-gray-800 dark:text-white/90' : 'text-gray-400 dark:text-white/30',
+            triggerLabelClass,
+          ]"
         >
           {{ selected?.short ?? selected?.label ?? placeholder }}
         </span>
@@ -57,9 +65,15 @@
       <div
         v-if="isOpen"
         :id="listId"
+        ref="menu"
         role="listbox"
-        class="absolute left-0 z-99999 mt-2 w-full min-w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-theme-lg dark:border-gray-800 dark:bg-gray-900"
-        :class="dropUp ? 'bottom-full mb-2 mt-0' : ''"
+        :style="menuShift ? { translate: `${menuShift}px 0` } : undefined"
+        class="absolute z-99999 mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-theme-lg dark:border-gray-800 dark:bg-gray-900"
+        :class="[
+          menuClass ?? 'w-full min-w-full',
+          align === 'right' ? 'right-0' : 'left-0',
+          dropUp ? 'bottom-full mb-2 mt-0' : '',
+        ]"
       >
         <div v-if="isSearchable" class="border-b border-gray-200 p-2 dark:border-gray-800">
           <input
@@ -67,16 +81,16 @@
             v-model="query"
             type="text"
             :placeholder="searchPlaceholder"
-            class="h-9 w-full rounded-lg border border-gray-200 bg-transparent px-3 text-theme-sm text-gray-800 outline-none focus:border-brand-400 dark:border-gray-700 dark:text-white/90"
+            class="h-10 w-full rounded-lg border border-gray-200 bg-transparent px-3 text-theme-sm text-gray-800 placeholder:text-gray-400 outline-none focus:border-brand-400 dark:border-gray-700 dark:text-white/90"
             @keydown="onSearchKeydown"
           />
         </div>
 
-        <ul ref="list" class="max-h-64 overflow-y-auto p-1.5">
+        <ul ref="list" class="overflow-y-auto p-1.5" :class="menuHeightClass">
           <template v-for="entry in visibleEntries" :key="entry.key">
             <li
               v-if="entry.type === 'group'"
-              class="px-2.5 pb-1 pt-2.5 text-theme-xs font-medium uppercase tracking-wide text-gray-400"
+              class="sticky top-0 z-10 bg-white px-2.5 pb-1 pt-2.5 text-theme-xs font-medium uppercase tracking-wide text-gray-400 dark:bg-gray-900"
             >
               {{ entry.label }}
             </li>
@@ -85,7 +99,7 @@
                 type="button"
                 role="option"
                 :aria-selected="entry.option.value === modelValue"
-                class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors"
+                class="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition-colors"
                 :class="[
                   entry.index === activeIndex ? 'bg-gray-100 dark:bg-white/[0.06]' : '',
                   entry.option.value === modelValue
@@ -95,7 +109,12 @@
                 @click="choose(entry.option)"
                 @mousemove="activeIndex = entry.index"
               >
-                <span v-if="entry.option.icon" class="shrink-0 text-base leading-none">
+                <span
+                  v-if="entry.option.flag"
+                  class="fi shrink-0 rounded-xs shadow-xs ring-1 ring-black/10 dark:ring-white/15"
+                  :class="[`fi-${entry.option.flag}`, optionFlagSizeClass]"
+                ></span>
+                <span v-else-if="entry.option.icon" class="shrink-0 text-base leading-none">
                   {{ entry.option.icon }}
                 </span>
                 <span
@@ -149,8 +168,10 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 export interface ZSelectOption {
   value: string | number | null
   label: string
-  /** Emoji rendered before the label — used for language flags. */
+  /** Emoji rendered before the label. */
   icon?: string
+  /** flag-icons code (`de`, `gb-wls`) drawn as an SVG flag before the label. */
+  flag?: string
   /** Shorter label for the closed trigger, e.g. a language code. */
   short?: string
   /** Secondary line under the label. */
@@ -170,10 +191,18 @@ const props = withDefaults(
     id?: string
     disabled?: boolean
     block?: boolean
-    size?: 'sm' | 'md'
+    size?: 'sm' | 'md' | 'lg'
     /** Forces the search box on or off; by default it appears from 8 options. */
     searchable?: boolean | null
     searchPlaceholder?: string
+    /** Width classes for the panel; defaults to matching the trigger. */
+    menuClass?: string
+    /** Panel edge pinned to the trigger — flip to `right` near the viewport edge. */
+    align?: 'left' | 'right'
+    /** Tailwind max-height class for the scrolling option list. */
+    menuHeightClass?: string
+    /** Extra classes on the trigger label — used to hide it on narrow screens. */
+    triggerLabelClass?: string
   }>(),
   {
     placeholder: 'Select…',
@@ -184,6 +213,10 @@ const props = withDefaults(
     size: 'md',
     searchable: null,
     searchPlaceholder: 'Search…',
+    menuClass: undefined,
+    align: 'left',
+    menuHeightClass: 'max-h-80',
+    triggerLabelClass: undefined,
   },
 )
 
@@ -192,18 +225,33 @@ const emit = defineEmits<{ 'update:modelValue': [value: string | number | null] 
 const root = ref<HTMLElement | null>(null)
 const trigger = ref<HTMLButtonElement | null>(null)
 const list = ref<HTMLElement | null>(null)
+const menu = ref<HTMLElement | null>(null)
 const searchInput = ref<HTMLInputElement | null>(null)
 
 const isOpen = ref(false)
 const query = ref('')
 const activeIndex = ref(0)
 const dropUp = ref(false)
+const menuShift = ref(0)
 
 const listId = `z-select-${Math.random().toString(36).slice(2, 8)}`
 
-const sizeClass = computed(() =>
-  props.size === 'sm' ? 'h-9 px-3 text-theme-sm' : 'h-11 px-4 text-theme-sm',
+const sizeClass = computed(
+  () =>
+    ({
+      sm: 'h-9 px-3 text-theme-sm',
+      md: 'h-11 px-4 text-theme-sm',
+      lg: 'h-12 px-4 text-base',
+    })[props.size],
 )
+
+// Flags are 4:3, so the widths below are 4/3 of the heights — anything else
+// letterboxes them inside their box.
+const flagSizeClass = computed(
+  () => ({ sm: 'h-4 w-[21px]', md: 'h-[18px] w-6', lg: 'h-5 w-[27px]' })[props.size],
+)
+
+const optionFlagSizeClass = computed(() => (props.size === 'sm' ? 'h-[18px] w-6' : 'h-5 w-[27px]'))
 
 const selected = computed(
   () => props.options.find((option) => option.value === props.modelValue) ?? null,
@@ -217,7 +265,9 @@ const matches = computed(() => {
   const term = query.value.trim().toLowerCase()
   if (!term) return props.options
   return props.options.filter((option) =>
-    `${option.label} ${option.hint ?? ''} ${option.group ?? ''}`.toLowerCase().includes(term),
+    `${option.label} ${option.short ?? ''} ${option.hint ?? ''} ${option.group ?? ''}`
+      .toLowerCase()
+      .includes(term),
   )
 })
 
@@ -262,13 +312,32 @@ const open = async () => {
   // Flip the panel upwards when there is no room below.
   const rect = trigger.value?.getBoundingClientRect()
   dropUp.value = rect ? window.innerHeight - rect.bottom < 280 && rect.top > 280 : false
+  await clampToViewport()
   if (isSearchable.value) searchInput.value?.focus()
   scrollActiveIntoView()
+}
+
+/**
+ * A panel wider than its trigger — the language list is 22rem next to a 9.5rem
+ * button — runs off the side of a phone screen. Nudge it back inside.
+ * `translate` rather than `transform`, so the open/close transition (which
+ * animates `transform`) still plays.
+ */
+const clampToViewport = async () => {
+  menuShift.value = 0
+  await nextTick()
+  const rect = menu.value?.getBoundingClientRect()
+  if (!rect) return
+  const margin = 8
+  if (rect.left < margin) menuShift.value = margin - rect.left
+  else if (rect.right > window.innerWidth - margin)
+    menuShift.value = window.innerWidth - margin - rect.right
 }
 
 const close = () => {
   isOpen.value = false
   query.value = ''
+  menuShift.value = 0
 }
 
 const toggle = () => (isOpen.value ? close() : open())
@@ -350,8 +419,18 @@ const onDocumentPointerDown = (event: PointerEvent) => {
   if (root.value && !root.value.contains(event.target as Node)) close()
 }
 
-onMounted(() => document.addEventListener('pointerdown', onDocumentPointerDown))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPointerDown))
+const onViewportChange = () => {
+  if (isOpen.value) void clampToViewport()
+}
+
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocumentPointerDown)
+  window.addEventListener('resize', onViewportChange)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocumentPointerDown)
+  window.removeEventListener('resize', onViewportChange)
+})
 </script>
 
 <style scoped>

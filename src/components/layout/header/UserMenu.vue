@@ -6,7 +6,9 @@
     >
       <MemberAvatar :member="currentUser" size="md" class="mr-3" />
 
-      <span class="block mr-1 font-medium text-theme-sm">
+      <!-- The name is the first thing to go: below 640px the header row has
+           room for the avatar and the chevron, nothing more. -->
+      <span class="hidden mr-1 font-medium text-theme-sm sm:block">
         {{ currentUser ? currentUser.firstName : 'Guest' }}
       </span>
 

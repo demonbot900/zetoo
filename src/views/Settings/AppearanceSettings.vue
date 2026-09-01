@@ -20,14 +20,18 @@
 
       <section class="zt-card p-5 sm:p-6">
         <div class="mb-4 flex items-start gap-3">
-          <span class="text-2xl leading-none">{{ language.flag }}</span>
+          <span
+            class="fi mt-1 h-6 w-8 shrink-0 rounded-xs shadow-xs ring-1 ring-black/10 dark:ring-white/15"
+            :class="`fi-${language.flag}`"
+          ></span>
           <div>
             <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">
               Language &amp; region
             </h3>
             <p class="mt-0.5 text-theme-sm text-gray-500 dark:text-gray-400">
-              {{ languages.length }} European languages, {{ translatedCount }} with a full
-              interface translation. The rest still format dates and numbers their own way.
+              {{ languages.length }} languages across Europe, the Middle East and Asia —
+              {{ translatedCount }} with a full interface translation. The rest still format dates
+              and numbers their own way.
             </p>
           </div>
         </div>
@@ -83,7 +87,7 @@ import { useLocale } from '@/composables/useLocale'
 import { messages } from '@/locales/messages'
 
 const { reset } = useAppearance()
-const { language, languages, d, n } = useLocale()
+const { language, languages, isRtl, d, n } = useLocale()
 
 const translatedCount = Object.keys(messages).length
 
@@ -92,5 +96,6 @@ const formatPreview = computed(() => [
   { label: 'Short date', value: d(new Date(), { dateStyle: 'short' }) },
   { label: 'Number', value: n(1234567.89, { maximumFractionDigits: 2 }) },
   { label: 'Percent', value: n(0.732, { style: 'percent', maximumFractionDigits: 1 }) },
+  { label: 'Writing direction', value: isRtl.value ? 'Right to left' : 'Left to right' },
 ])
 </script>

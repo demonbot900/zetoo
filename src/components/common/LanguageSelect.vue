@@ -6,11 +6,16 @@
       :id="id"
       :model-value="locale"
       :options="options"
-      :size="variant === 'compact' ? 'sm' : 'md'"
+      :size="variant === 'compact' ? 'md' : 'lg'"
       :aria-label="t('language.label')"
       searchable
-      search-placeholder="Search languages…"
-      :class="variant === 'compact' ? 'w-[7.5rem]' : ''"
+      :search-placeholder="t('language.search')"
+      :block="variant !== 'compact'"
+      :class="variant === 'compact' ? 'xsm:w-[9.5rem]' : ''"
+      :trigger-label-class="variant === 'compact' ? 'hidden xsm:block' : undefined"
+      :menu-class="menuClass"
+      :align="variant === 'compact' ? 'right' : 'left'"
+      menu-height-class="max-h-[26rem]"
       @update:model-value="onChange"
     />
 
@@ -24,7 +29,7 @@
 import { computed } from 'vue'
 import ZSelect from '@/components/ui/ZSelect.vue'
 import { useLocale, isTranslated as hasCatalogue } from '@/composables/useLocale'
-import { languagesByRegion } from '@/locales/languages'
+import { languageBadge, languagesByRegion } from '@/locales/languages'
 
 const props = withDefaults(
   defineProps<{
@@ -39,18 +44,34 @@ const props = withDefaults(
 
 const { locale, setLocale, isTranslated, t } = useLocale()
 
+/**
+ * The list is far wider than the closed control so the native name, the
+ * English name and the “translated” badge all fit on one line. The compact
+ * header button gets a fixed panel width; the full control grows past its own
+ * box but never past a narrow viewport.
+ *
+ * Below 425px the header has no room for a 152px control beside four other
+ * buttons, so the compact trigger drops to the flag alone (see
+ * `trigger-label-class`) and the panel is capped to the viewport instead.
+ */
+const menuClass = computed(() =>
+  props.variant === 'compact'
+    ? 'w-[22rem] max-w-[calc(100vw-2rem)]'
+    : 'w-full min-w-full sm:min-w-[24rem]',
+)
+
 const options = computed(() =>
   languagesByRegion().map((language) => ({
     value: language.code,
     label: language.native,
     // The closed button stays narrow; the list keeps the full native name.
-    short: language.code.split('-')[0].toUpperCase(),
+    short: languageBadge(language),
     // The English name keeps the search box useful for people who do not read
     // the native spelling, and marks the languages that carry a catalogue.
     hint: hasCatalogue(language.code)
       ? `${language.english} · ${t('language.translated')}`
       : language.english,
-    icon: language.flag,
+    flag: language.flag,
     group: language.region,
   })),
 )
