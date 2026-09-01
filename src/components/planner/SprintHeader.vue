@@ -1,0 +1,77 @@
+<template>
+  <section
+    class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6"
+  >
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2.5">
+          <h2 class="text-lg font-semibold text-gray-800 dark:text-white/90">
+            {{ activeSprint.name }}
+          </h2>
+          <span
+            class="rounded-full bg-brand-50 px-2.5 py-0.5 text-theme-xs font-medium text-brand-500 dark:bg-brand-500/15 dark:text-brand-400"
+          >
+            Active
+          </span>
+        </div>
+        <p class="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">{{ activeSprint.goal }}</p>
+        <p class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+          {{ formatDate(activeSprint.startDate) }} – {{ formatDate(activeSprint.endDate) }} ·
+          {{ sprintDays.remaining }} of {{ sprintDays.total }} days left
+        </p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-6">
+        <div v-for="stat in stats" :key="stat.label">
+          <p class="text-theme-xs text-gray-500 dark:text-gray-400">{{ stat.label }}</p>
+          <p class="mt-0.5 text-lg font-semibold text-gray-800 dark:text-white/90">
+            {{ stat.value }}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2.5 text-theme-sm font-medium text-white transition-colors hover:bg-brand-600"
+          @click="$emit('create')"
+        >
+          <svg class="stroke-current" width="18" height="18" viewBox="0 0 20 20" fill="none">
+            <path d="M10 4.5v11M4.5 10h11" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+          New issue
+        </button>
+      </div>
+    </div>
+
+    <div class="mt-5">
+      <div class="flex items-center justify-between text-theme-xs text-gray-500 dark:text-gray-400">
+        <span>{{ sprintTotals.done }} of {{ sprintTotals.issues }} issues done</span>
+        <span>{{ percentDone }}%</span>
+      </div>
+      <div class="mt-2 h-2 rounded-full bg-gray-100 dark:bg-gray-800">
+        <div class="h-2 rounded-full bg-success-500" :style="{ width: `${percentDone}%` }"></div>
+      </div>
+    </div>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue'
+import { formatDate, usePlanner } from '@/composables/usePlanner'
+
+defineEmits<{ create: [] }>()
+
+const { activeSprint, sprintTotals, sprintDays } = usePlanner()
+
+const percentDone = computed(() =>
+  sprintTotals.value.issues === 0
+    ? 0
+    : Math.round((sprintTotals.value.done / sprintTotals.value.issues) * 100),
+)
+
+const stats = computed(() => [
+  { label: 'Estimated', value: `${sprintTotals.value.estimate}h` },
+  { label: 'Logged', value: `${sprintTotals.value.logged}h` },
+  { label: 'Remaining', value: `${sprintTotals.value.remaining}h` },
+  { label: 'Points', value: `${sprintTotals.value.donePoints}/${sprintTotals.value.points}` },
+])
+</script>
