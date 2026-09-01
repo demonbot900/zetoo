@@ -62,12 +62,13 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { UserCircleIcon, ChevronDownIcon, LogoutIcon, SettingsIcon, InfoCircleIcon } from '@/icons'
 import { RouterLink } from 'vue-router'
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import MemberAvatar from '@/components/team/MemberAvatar.vue'
 import { fullName, useWorkspace } from '@/composables/useWorkspace'
+import { useAuth } from '@/composables/useAuth'
 
 import { useLocale } from '@/composables/useLocale'
 
@@ -75,7 +76,7 @@ const { currentUser, company } = useWorkspace()
 const { t } = useLocale()
 
 const dropdownOpen = ref(false)
-const dropdownRef = ref(null)
+const dropdownRef = ref<HTMLElement | null>(null)
 
 const menuItems = computed(() => [
   { href: '/profile', icon: UserCircleIcon, text: t('menu.myProfile') },
@@ -93,14 +94,20 @@ const closeDropdown = () => {
   dropdownOpen.value = false
 }
 
-const signOut = () => {
-  // Implement sign out logic here
-  console.log('Signing out...')
+const { signOut: endSession } = useAuth()
+
+const signOut = async () => {
   closeDropdown()
+  // Clears the server session cookie; harmless when nobody signed in with
+  // Google, since there is simply no session to drop.
+  await endSession()
+  // Full load: the reactive stores still hold the old workspace in memory,
+  // and a router push would carry it into the next session.
+  window.location.assign('/signin')
 }
 
-const handleClickOutside = (event) => {
-  if (dropdownRef.value && !dropdownRef.value.contains(event.target)) {
+const handleClickOutside = (event: MouseEvent) => {
+  if (dropdownRef.value && !dropdownRef.value.contains(event.target as Node)) {
     closeDropdown()
   }
 }

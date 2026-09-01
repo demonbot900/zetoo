@@ -21,4 +21,17 @@ export default defineConfigWithVueTs(
   pluginVue.configs['flat/essential'],
   vueTsConfigs.recommended,
   skipFormatting,
+
+  {
+    name: 'app/unused-args',
+    rules: {
+      // Underscore marks a parameter that exists only to satisfy a signature.
+      // Express, for one, only treats a function as an error handler when it
+      // declares all four arguments, `next` included.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' },
+      ],
+    },
+  },
 )

@@ -4,7 +4,7 @@
   >
     <div class="flex items-center justify-between gap-2">
       <h3 class="text-theme-sm font-semibold text-gray-900 dark:text-white">
-        {{ activeSprint.name }}
+        {{ activeSprint?.name ?? "Kein Sprint" }}
       </h3>
       <span
         class="rounded-full bg-brand-50 px-2 py-0.5 text-theme-xs font-medium text-brand-500 dark:bg-brand-500/15 dark:text-brand-400"

@@ -9,6 +9,7 @@ import type {
   RegistrationDraft,
 } from '@/types/company'
 import { colorFromString } from '@/utils/color'
+import { load as syncLoad, save as syncSave } from '@/utils/sync'
 
 const STORAGE_KEY = 'zetoo.workspace.v1'
 
@@ -209,34 +210,33 @@ const state = reactive<WorkspaceState>({
 export const workspaceVersion = ref(0)
 
 const isRestoring = ref(true)
+/** Set once the user edits, so a slow server response cannot overwrite them. */
+let isDirty = false
 
 const persist = () => {
   if (isRestoring.value) return
-  try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        company: state.company,
-        members: state.members,
-        invites: state.invites,
-        currentUserId: state.currentUserId,
-      }),
-    )
-  } catch {
-    // Storage can be full or blocked; the app still works for this session.
-  }
+  isDirty = true
+  syncSave('workspace', STORAGE_KEY, {
+    company: state.company,
+    members: state.members,
+    invites: state.invites,
+    currentUserId: state.currentUserId,
+  })
 }
 
+const apply = (parsed: WorkspaceState | null) => {
+  if (!parsed?.company) return
+  state.company = parsed.company
+  state.members = parsed.members ?? []
+  state.invites = parsed.invites ?? []
+  state.currentUserId = parsed.currentUserId ?? state.members[0]?.id ?? null
+}
+
+/** Paint from the local mirror immediately, then reconcile with the database. */
 const restore = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return
-    const parsed = JSON.parse(raw) as WorkspaceState
-    if (!parsed?.company) return
-    state.company = parsed.company
-    state.members = parsed.members ?? []
-    state.invites = parsed.invites ?? []
-    state.currentUserId = parsed.currentUserId ?? state.members[0]?.id ?? null
+    if (raw) apply(JSON.parse(raw) as WorkspaceState)
   } catch {
     // Corrupt payload: fall back to an unregistered workspace.
   }
@@ -246,6 +246,27 @@ restore()
 isRestoring.value = false
 
 watch(() => JSON.stringify(state), persist, { deep: false })
+
+/**
+ * Resolves once the database has had its say.
+ *
+ * The navigation guard decides between the app and the registration wizard
+ * from `isRegistered`, so it has to await this. Without it a reload always
+ * redirects to registration: the guard would run while the workspace is still
+ * in flight and see an empty store.
+ */
+export const workspaceReady: Promise<void> = syncLoad<WorkspaceState>(
+  'workspace',
+  STORAGE_KEY,
+  (value) => !value.company,
+).then((remote) => {
+  if (!remote || isDirty) return
+  isRestoring.value = true
+  apply(remote)
+  isRestoring.value = false
+  // Let the planner rebuild its team from the members the database returned.
+  workspaceVersion.value += 1
+})
 
 /* ------------------------------------------------------------------ *
  * Factories
@@ -280,7 +301,6 @@ export const emptyRegistrationDraft = (): RegistrationDraft => ({
   },
   invites: [],
   boardTemplate: 'scrum',
-  seedSampleData: true,
   acceptedTerms: false,
 })
 
@@ -321,91 +341,6 @@ export const createInvite = (input: Partial<Invite> = {}): Invite => ({
   jobTitle: input.jobTitle ?? '',
   sentAt: input.sentAt ?? new Date().toISOString(),
 })
-
-/* ------------------------------------------------------------------ *
- * Demo workspace — matches the seeded planner data
- * ------------------------------------------------------------------ */
-
-const DEMO_MEMBERS: Partial<MemberProfile>[] = [
-  {
-    id: 'u1',
-    firstName: 'Amara',
-    lastName: 'Osei',
-    email: 'amara@zetoo.app',
-    jobTitle: 'Product Lead',
-    department: 'Product',
-    role: 'owner',
-    avatar: '/images/user/user-01.jpg',
-    capacityHours: 56,
-    location: 'Berlin, Germany',
-    skills: ['Roadmapping', 'Discovery', 'Stakeholders'],
-  },
-  {
-    id: 'u2',
-    firstName: 'Diego',
-    lastName: 'Marín',
-    email: 'diego@zetoo.app',
-    jobTitle: 'Frontend Engineer',
-    department: 'Engineering',
-    role: 'member',
-    avatar: '/images/user/user-02.jpg',
-    capacityHours: 64,
-    location: 'Madrid, Spain',
-    skills: ['Vue', 'TypeScript', 'Design systems'],
-  },
-  {
-    id: 'u3',
-    firstName: 'Priya',
-    lastName: 'Raman',
-    email: 'priya@zetoo.app',
-    jobTitle: 'Staff Engineer',
-    department: 'Engineering',
-    role: 'admin',
-    avatar: '/images/user/user-03.jpg',
-    capacityHours: 60,
-    location: 'Bengaluru, India',
-    skills: ['Architecture', 'Node', 'Mentoring'],
-  },
-  {
-    id: 'u4',
-    firstName: 'Noah',
-    lastName: 'Feldman',
-    email: 'noah@zetoo.app',
-    jobTitle: 'Backend Engineer',
-    department: 'Engineering',
-    role: 'member',
-    avatar: '/images/user/user-04.jpg',
-    capacityHours: 64,
-    location: 'Vienna, Austria',
-    skills: ['Go', 'Postgres', 'APIs'],
-  },
-  {
-    id: 'u5',
-    firstName: 'Lena',
-    lastName: 'Bauer',
-    email: 'lena@zetoo.app',
-    jobTitle: 'Product Designer',
-    department: 'Design',
-    role: 'member',
-    avatar: '/images/user/user-05.jpg',
-    capacityHours: 48,
-    location: 'Hamburg, Germany',
-    skills: ['UI', 'Prototyping', 'Research'],
-  },
-  {
-    id: 'u6',
-    firstName: 'Tomas',
-    lastName: 'Silva',
-    email: 'tomas@zetoo.app',
-    jobTitle: 'QA Engineer',
-    department: 'Quality',
-    role: 'member',
-    avatar: '/images/user/user-06.jpg',
-    capacityHours: 52,
-    location: 'Lisbon, Portugal',
-    skills: ['Automation', 'Playwright', 'Release testing'],
-  },
-]
 
 /* ------------------------------------------------------------------ *
  * Store
@@ -542,36 +477,6 @@ export function useWorkspace() {
     return company
   }
 
-  /** One-click workspace used by the "explore the demo" path. */
-  const seedDemoWorkspace = (): Company => {
-    const now = new Date().toISOString()
-    state.company = {
-      id: 'c-demo',
-      name: 'Northwind Studio',
-      slug: 'northwind-studio',
-      industry: 'Software & SaaS',
-      size: '11-50',
-      website: 'https://northwind.example',
-      logo: '',
-      addressLine: 'Torstraße 12',
-      city: 'Berlin',
-      postalCode: '10119',
-      country: 'Germany',
-      vatId: 'DE123456789',
-      timezone: 'Europe/Berlin',
-      workDays: [1, 2, 3, 4, 5],
-      hoursPerDay: 8,
-      plan: 'team',
-      createdAt: now,
-    }
-    state.members = DEMO_MEMBERS.map((member) => createMemberProfile(member))
-    state.invites = []
-    state.currentUserId = 'u1'
-    persist()
-    workspaceVersion.value += 1
-    return state.company
-  }
-
   const resetWorkspace = () => {
     state.company = null
     state.members = []
@@ -605,7 +510,6 @@ export function useWorkspace() {
     inviteMember,
     revokeInvite,
     registerCompany,
-    seedDemoWorkspace,
     resetWorkspace,
   }
 }

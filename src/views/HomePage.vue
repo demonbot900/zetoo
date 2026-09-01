@@ -134,22 +134,6 @@
         </div>
       </section>
 
-      <!-- Stats -->
-      <section
-        class="border-y border-gray-200 bg-gray-50 py-12 dark:border-gray-800 dark:bg-white/[0.02]"
-      >
-        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <dl class="grid grid-cols-2 gap-8 lg:grid-cols-4">
-            <div v-for="stat in stats" :key="stat.label" class="text-center">
-              <dt class="text-theme-sm text-gray-500 dark:text-gray-400">{{ stat.label }}</dt>
-              <dd class="mt-2 text-title-sm font-semibold text-gray-800 dark:text-white/90">
-                {{ stat.value }}
-              </dd>
-            </div>
-          </dl>
-        </div>
-      </section>
-
       <!-- Features -->
       <section id="features" class="py-20 lg:py-28">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -272,59 +256,6 @@
       </section>
 
       <!-- Testimonials -->
-      <section class="py-20 lg:py-28">
-        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div class="mx-auto max-w-2xl text-center">
-            <h2
-              class="font-merriweather text-title-sm font-bold text-gray-900 dark:text-white/90 sm:text-title-md"
-            >
-              Teams that stopped guessing at the sprint
-            </h2>
-          </div>
-
-          <div class="mt-14 grid gap-6 lg:grid-cols-3">
-            <figure
-              v-for="quote in testimonials"
-              :key="quote.name"
-              class="flex flex-col justify-between rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]"
-            >
-              <div>
-                <div class="flex gap-1">
-                  <svg
-                    v-for="star in 5"
-                    :key="star"
-                    class="fill-orange-400"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      d="M10 1.5l2.47 5.01 5.53.8-4 3.9.94 5.5L10 14.12 5.06 16.7l.94-5.5-4-3.9 5.53-.8L10 1.5Z"
-                    />
-                  </svg>
-                </div>
-                <blockquote class="mt-5 text-theme-sm leading-6 text-gray-600 dark:text-gray-300">
-                  &ldquo;{{ quote.body }}&rdquo;
-                </blockquote>
-              </div>
-              <figcaption class="mt-6 flex items-center gap-3">
-                <img
-                  :src="quote.avatar"
-                  :alt="quote.name"
-                  class="h-11 w-11 rounded-full object-cover"
-                />
-                <div>
-                  <p class="text-theme-sm font-medium text-gray-800 dark:text-white/90">
-                    {{ quote.name }}
-                  </p>
-                  <p class="text-theme-xs text-gray-500 dark:text-gray-400">{{ quote.role }}</p>
-                </div>
-              </figcaption>
-            </figure>
-          </div>
-        </div>
-      </section>
-
       <!-- Pricing -->
       <section
         id="pricing"
@@ -491,13 +422,6 @@ const previewChannels = [
   { label: 'Lena Bauer', share: 41, accent: false },
 ]
 
-const stats = [
-  { label: 'Teams planning in Zetoo', value: '9,200' },
-  { label: 'Sprints closed on time', value: '92%' },
-  { label: 'Hours tracked each week', value: '1.4M' },
-  { label: 'Time to first sprint', value: '< 5 min' },
-]
-
 const features = [
   {
     icon: GridIcon,
@@ -572,27 +496,6 @@ const previewShots = [
     title: 'Reports',
     description: 'Burndown, velocity, accuracy.',
     image: '/images/grid-image/image-04.png',
-  },
-]
-
-const testimonials = [
-  {
-    body: 'The workload bars caught an over-committed sprint on planning day. We moved two issues and finished on time instead of two days late.',
-    name: 'Amara Osei',
-    role: 'Head of Product, Northwind',
-    avatar: '/images/user/user-01.jpg',
-  },
-  {
-    body: 'Logging hours on the card instead of a separate timesheet is the whole thing. Our estimate accuracy went from guesswork to 104%.',
-    name: 'Diego Marín',
-    role: 'Engineering Lead, Voltway',
-    avatar: '/images/user/user-02.jpg',
-  },
-  {
-    body: 'The burndown reads from real remaining hours, not a status count. It told us we were behind on day four, which is when it still mattered.',
-    name: 'Priya Raman',
-    role: 'Staff Engineer, Kettle',
-    avatar: '/images/user/user-03.jpg',
   },
 ]
 

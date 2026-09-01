@@ -2,7 +2,9 @@
   <AdminLayout>
     <PageBreadcrumb page-title="Board" />
 
-    <div class="flex flex-col gap-6">
+    <BoardPicker v-if="!activeBoard" />
+
+    <div v-else class="flex flex-col gap-6">
       <SprintHeader @create="openCreate(defaultStatus)" />
 
       <div class="flex flex-wrap items-center gap-3">
@@ -122,6 +124,7 @@ import { computed, nextTick, ref } from 'vue'
 import draggable from 'vuedraggable'
 import AdminLayout from '@/components/layout/AdminLayout.vue'
 import PageBreadcrumb from '@/components/common/PageBreadcrumb.vue'
+import BoardPicker from '@/components/planner/BoardPicker.vue'
 import SprintHeader from '@/components/planner/SprintHeader.vue'
 import BoardFilters from '@/components/planner/BoardFilters.vue'
 import BoardColumn from '@/components/planner/BoardColumn.vue'
@@ -145,8 +148,7 @@ const {
   updateColumn,
   removeColumn,
   reorderColumns,
-  toggleColumnCollapsed,
-} = usePlanner()
+  toggleColumnCollapsed, activeBoard } = usePlanner()
 const { appearance } = useAppearance()
 const { open } = useCustomizer()
 const { t } = useLocale()

@@ -4,13 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -n api,web -c magenta,cyan \"npm:dev:api\" \"npm:dev:web\"",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "build-only": "vite build",
+    "build:template": "node scripts/build-default-template.mjs",
     "type-check": "vue-tsc --build",
     "lint": "eslint . --fix",
-    "format": "prettier --write src/"
+    "format": "prettier --write src/",
+    "dev:web": "vite",
+    "dev:api": "node --env-file-if-exists=.env server/index.mjs",
+    "start": "node --env-file-if-exists=.env server/index.mjs",
+    "mcp": "node --env-file-if-exists=.env server/mcp.mjs"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.15",
@@ -19,22 +24,27 @@
     "@fullcalendar/list": "^6.1.15",
     "@fullcalendar/timegrid": "^6.1.15",
     "@fullcalendar/vue3": "^6.1.15",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@tailwindcss/forms": "^0.5.10",
     "@tailwindcss/typography": "^0.5.16",
     "apexcharts": "^4.4.0",
-    "dropzone": "^6.0.0-beta.2",
+    "better-sqlite3": "^13.0.3",
+    "cookie-parser": "^1.4.7",
+    "docxtemplater": "^3.69.3",
+    "express": "^5.2.1",
     "flag-icons": "^7.5.0",
     "flatpickr": "^4.6.13",
-    "jsvectormap": "^1.6.0",
+    "google-auth-library": "^11.0.2",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-vue-next": "^0.474.0",
-    "swiper": "^11.2.1",
+    "pizzip": "^3.2.0",
     "vue": "^3.5.13",
     "vue-flatpickr-component": "^11.0.5",
-    "vue-kanban": "^1.8.0",
     "vue-router": "^4.5.0",
     "vue3-apexcharts": "^1.8.0",
     "vuedraggable": "^4.1.0",
-    "vuevectormap": "^2.0.1"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
@@ -45,6 +55,8 @@
     "@vue/eslint-config-prettier": "^10.1.0",
     "@vue/eslint-config-typescript": "^14.3.0",
     "@vue/tsconfig": "^0.7.0",
+    "concurrently": "^10.0.5",
+    "docx": "^9.7.1",
     "eslint": "^9.18.0",
     "eslint-plugin-vue": "^9.32.0",
     "jiti": "^2.4.2",
@@ -57,5 +69,8 @@
     "vite": "^6.0.11",
     "vite-plugin-vue-devtools": "^7.7.0",
     "vue-tsc": "^2.2.0"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
   }
 }

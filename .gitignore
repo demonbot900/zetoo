@@ -29,3 +29,9 @@ coverage
 
 *.tsbuildinfo
 .vercel
+
+# SQLite database and its WAL sidecars
+server/data/
+
+# Local secrets
+.env

@@ -2,7 +2,9 @@
   <AdminLayout>
     <PageBreadcrumb page-title="Timeline" />
 
-    <div
+    <BoardPicker v-if="!activeBoard" />
+
+    <div v-else
       class="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
     >
       <header
@@ -62,6 +64,15 @@
               </div>
             </div>
           </div>
+
+          <!-- Nothing to lay out yet -->
+          <p
+            v-if="!lanes.length"
+            class="sticky left-0 px-5 py-16 text-center text-theme-sm text-gray-500 dark:text-gray-400"
+          >
+            Keine terminierten Vorgänge. Setze auf einem Vorgang ein Start- und ein Fälligkeitsdatum,
+            damit er hier erscheint.
+          </p>
 
           <!-- Lanes -->
           <div v-for="lane in lanes" :key="lane.id">
@@ -136,20 +147,21 @@
 import { computed } from 'vue'
 import AdminLayout from '@/components/layout/AdminLayout.vue'
 import PageBreadcrumb from '@/components/common/PageBreadcrumb.vue'
+import BoardPicker from '@/components/planner/BoardPicker.vue'
 import IssueTypeIcon from '@/components/planner/IssueTypeIcon.vue'
 import UserAvatar from '@/components/planner/UserAvatar.vue'
 import IssueDetailPanel from '@/components/planner/IssueDetailPanel.vue'
 import { addDays, daysBetween, formatDate, today, usePlanner } from '@/composables/usePlanner'
 import type { Issue } from '@/types/planner'
 
-const { issues, epics, memberById, selectIssue } = usePlanner()
+const { issues, epics, memberById, selectIssue, activeBoard } = usePlanner()
 
 const dayWidth = 44
 const dayWidthClass = 'w-11'
 const longDate: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
 
 const scheduled = computed(() =>
-  issues.filter((issue) => issue.startDate !== null && issue.dueDate !== null),
+  issues.value.filter((issue) => issue.startDate !== null && issue.dueDate !== null),
 )
 
 const range = computed(() => {
@@ -175,16 +187,31 @@ const days = computed(() => {
   })
 })
 
-const lanes = computed(() =>
-  epics
-    .map((epic) => ({
-      id: epic.id,
-      name: epic.name,
-      color: epic.color,
-      issues: scheduled.value.filter((issue) => issue.epicId === epic.id),
-    }))
-    .filter((lane) => lane.issues.length > 0),
-)
+/**
+ * One lane per epic, plus a catch-all.
+ *
+ * Epics are optional, so grouping by them alone hides every issue in a
+ * workspace that does not use them — which is every new workspace.
+ */
+const lanes = computed(() => {
+  const known = new Set(epics.value.map((epic) => epic.id))
+
+  const epicLanes = epics.value.map((epic) => ({
+    id: epic.id,
+    name: epic.name,
+    color: epic.color,
+    issues: scheduled.value.filter((issue) => issue.epicId === epic.id),
+  }))
+
+  const loose = scheduled.value.filter(
+    (issue) => issue.epicId === null || !known.has(issue.epicId),
+  )
+
+  return [
+    ...epicLanes,
+    { id: '__none__', name: 'Ohne Epic', color: 'bg-gray-400', issues: loose },
+  ].filter((lane) => lane.issues.length > 0)
+})
 
 const barStyle = (issue: Issue) => {
   const offset = daysBetween(range.value.start, issue.startDate!)

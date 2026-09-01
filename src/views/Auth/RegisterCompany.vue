@@ -39,9 +39,6 @@
         </div>
 
         <div class="flex flex-col gap-3">
-          <button type="button" class="zt-btn-ghost" @click="useDemo">
-            Explore the demo workspace instead
-          </button>
           <p class="text-theme-xs text-gray-500 dark:text-gray-400">
             Already have an account?
             <router-link to="/signin" class="font-medium text-brand-500 hover:text-brand-600">
@@ -111,7 +108,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import StepIndicator from '@/components/registration/StepIndicator.vue'
 import ZetooLogo from '@/components/common/ZetooLogo.vue'
@@ -122,13 +119,28 @@ import TeamStep from '@/components/registration/TeamStep.vue'
 import BoardStep from '@/components/registration/BoardStep.vue'
 import { useRegistration } from '@/composables/useRegistration'
 import { useWorkspace } from '@/composables/useWorkspace'
-import { usePlanner } from '@/composables/usePlanner'
+import { useAuth } from '@/composables/useAuth'
 
 const router = useRouter()
-const { step, steps, progress, errors, canContinue, isLastStep, next, back, goTo, submit, reset } =
-  useRegistration()
-const { seedDemoWorkspace, isRegistered } = useWorkspace()
-const { resetBoard } = usePlanner()
+const {
+  draft,
+  step,
+  steps,
+  progress,
+  errors,
+  canContinue,
+  isLastStep,
+  next,
+  back,
+  goTo,
+  submit,
+  reset,
+} = useRegistration()
+const { isRegistered } = useWorkspace()
+const { claimWorkspace } = useAuth()
+
+const registering = ref(false)
+const registerError = ref('')
 
 // A fresh visit to /register always starts at the top of the wizard.
 onMounted(() => {
@@ -136,19 +148,28 @@ onMounted(() => {
 })
 
 const blockingError = computed(() => {
+  if (registerError.value) return registerError.value
   const [first] = Object.values(errors.value)
   return first ?? ''
 })
 
-const finish = () => {
-  if (!submit()) return
-  router.push('/dashboard')
-}
+const finish = async () => {
+  if (registering.value) return
+  registerError.value = ''
+  registering.value = true
+  try {
+    // Creates the company row and the session that ties this browser to it.
+    // Without it the workspace sync has no tenant to write into.
+    await claimWorkspace(draft.company.name, draft.owner.email, `${draft.owner.firstName} ${draft.owner.lastName}`.trim())
+  } catch (error) {
+    registerError.value =
+      error instanceof Error ? error.message : 'Der Arbeitsbereich konnte nicht angelegt werden.'
+    registering.value = false
+    return
+  }
+  registering.value = false
 
-const useDemo = () => {
-  seedDemoWorkspace()
-  // The seeded issues use the default Scrum columns, so put those back too.
-  resetBoard()
+  if (!submit()) return
   router.push('/dashboard')
 }
 </script>

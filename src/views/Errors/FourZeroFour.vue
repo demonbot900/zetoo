@@ -36,7 +36,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
 import CommonGridShape from '../../components/common/CommonGridShape.vue'
 import ZetooLogo from '@/components/common/ZetooLogo.vue'

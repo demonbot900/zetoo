@@ -94,7 +94,7 @@ const assigneeOptions = computed(() => [
 
 const destinationOptions = computed(() => [
   { value: null, label: 'Backlog' },
-  ...sprints.map((sprint) => ({ value: sprint.id, label: sprint.name, hint: sprint.goal })),
+  ...sprints.value.map((sprint) => ({ value: sprint.id, label: sprint.name, hint: sprint.goal })),
 ])
 
 const blank = () => ({
@@ -105,7 +105,7 @@ const blank = () => ({
   estimateHours: 4,
   startDate: today,
   dueDate: addDays(today, 5),
-  sprintId: props.defaultSprintId ?? activeSprint.value.id,
+  sprintId: props.defaultSprintId ?? activeSprint.value?.id ?? null,
 })
 
 const form = reactive(blank())

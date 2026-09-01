@@ -1,7 +1,8 @@
 import { computed, reactive, ref, watch } from 'vue'
 import type {
+  Board,
   BoardTemplate,
-  ChecklistItem,
+  Epic,
   Issue,
   IssuePriority,
   IssueStatus,
@@ -11,21 +12,38 @@ import type {
   TeamMember,
 } from '@/types/planner'
 import { useWorkspace, workspaceVersion, fullName, initialsOf } from '@/composables/useWorkspace'
+import { recordTimeEntry } from '@/composables/useRecords'
+import { load as syncLoad, save as syncSave } from '@/utils/sync'
 
 const BOARD_STORAGE_KEY = 'zetoo.board.v1'
 
 /* ------------------------------------------------------------------ *
- * Date helpers — the seed data is anchored to the current week so the
- * board, timeline and burndown always look live.
+ * Date helpers, shared by the board, timeline and burndown views.
  * ------------------------------------------------------------------ */
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-export const toISODate = (date: Date): string => date.toISOString().slice(0, 10)
+/**
+ * Formats a `Date` as `YYYY-MM-DD` in the *local* calendar.
+ *
+ * Deliberately not `toISOString()`: that converts to UTC first, so local
+ * midnight anywhere east of Greenwich formats as the previous day. Every date
+ * in this app is a calendar day, not an instant — dragging an issue onto the
+ * 15th has to store the 15th.
+ */
+export const toISODate = (date: Date): string =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate(),
+  ).padStart(2, '0')}`
 
+/**
+ * Adds calendar days. Uses `setDate` rather than millisecond arithmetic so the
+ * clock change either side of a DST switch does not swallow or duplicate a day.
+ */
 export const addDays = (date: string | Date, days: number): string => {
   const base = typeof date === 'string' ? new Date(`${date}T00:00:00`) : new Date(date)
-  return toISODate(new Date(base.getTime() + days * DAY_MS))
+  base.setDate(base.getDate() + days)
+  return toISODate(base)
 }
 
 export const daysBetween = (from: string, to: string): number =>
@@ -41,14 +59,6 @@ export const formatDate = (date: string | null, opts?: Intl.DateTimeFormatOption
   )
 }
 
-/** Monday of the current week, used as the anchor for all seeded dates. */
-const currentMonday = (): string => {
-  const now = new Date()
-  const offset = (now.getDay() + 6) % 7
-  return toISODate(new Date(now.getTime() - offset * DAY_MS))
-}
-
-const MONDAY = currentMonday()
 export const today = toISODate(new Date())
 
 /* ------------------------------------------------------------------ *
@@ -141,26 +151,45 @@ export const columnIdFrom = (name: string, taken: string[] = []): string => {
   return `${base}_${suffix}`
 }
 
-const defaultColumns = (): StatusColumn[] => [
-  { id: 'todo', name: 'To Do', color: '#98a2b3', wipLimit: null, order: 0, collapsed: false },
+const defaultColumns = (boardId = ''): StatusColumn[] => [
+  { id: 'todo', boardId, name: 'To Do', color: '#98a2b3', wipLimit: null, order: 0, collapsed: false },
   {
     id: 'in_progress',
+    boardId,
     name: 'In Progress',
     color: '#465fff',
     wipLimit: 5,
     order: 1,
     collapsed: false,
   },
-  { id: 'review', name: 'In Review', color: '#f79009', wipLimit: 3, order: 2, collapsed: false },
-  { id: 'done', name: 'Done', color: '#12b76a', wipLimit: null, order: 3, collapsed: false },
+  { id: 'review', boardId, name: 'In Review', color: '#f79009', wipLimit: 3, order: 2, collapsed: false },
+  { id: 'done', boardId, name: 'Done', color: '#12b76a', wipLimit: null, order: 3, collapsed: false },
 ]
 
+/* ------------------------------------------------------------------ *
+ * Boards
+ * ------------------------------------------------------------------ */
+
+/** Every board in the workspace, one per client engagement. */
+const boards = reactive<Board[]>([])
+const activeBoardId = ref<string>('')
+
 /**
- * The live board columns. Reactive array so every consumer that already
- * imports `statusColumns` keeps working while columns are added, renamed,
- * recoloured or reordered.
+ * Columns of the boards that are *not* currently open.
+ *
+ * `statusColumns` always holds the active board's columns so the whole board
+ * UI — adding, renaming, reordering, WIP limits — keeps operating on a plain
+ * reactive array. Switching boards parks the outgoing set here and loads the
+ * incoming one; saving merges both halves back together.
  */
-export const statusColumns = reactive<StatusColumn[]>(defaultColumns())
+const columnsByBoard = new Map<string, StatusColumn[]>()
+
+/**
+ * The live columns of the board currently open. Reactive array so every
+ * consumer that already imports `statusColumns` keeps working while columns
+ * are added, renamed, recoloured or reordered.
+ */
+export const statusColumns = reactive<StatusColumn[]>([])
 
 /** Column id → label, kept in sync with `statusColumns`. */
 export const statusLabels = reactive<Record<string, string>>({ backlog: 'Backlog' })
@@ -191,57 +220,12 @@ export const typeLabels: Record<IssueType, string> = {
   bug: 'Bug',
 }
 
-const DEMO_TEAM: TeamMember[] = [
-  {
-    id: 'u1',
-    name: 'Amara Osei',
-    role: 'Product Lead',
-    avatar: '/images/user/user-01.jpg',
-    capacityHours: 56,
-  },
-  {
-    id: 'u2',
-    name: 'Diego Marín',
-    role: 'Frontend Engineer',
-    avatar: '/images/user/user-02.jpg',
-    capacityHours: 64,
-  },
-  {
-    id: 'u3',
-    name: 'Priya Raman',
-    role: 'Staff Engineer',
-    avatar: '/images/user/user-03.jpg',
-    capacityHours: 60,
-  },
-  {
-    id: 'u4',
-    name: 'Noah Feldman',
-    role: 'Backend Engineer',
-    avatar: '/images/user/user-04.jpg',
-    capacityHours: 64,
-  },
-  {
-    id: 'u5',
-    name: 'Lena Bauer',
-    role: 'Designer',
-    avatar: '/images/user/user-05.jpg',
-    capacityHours: 48,
-  },
-  {
-    id: 'u6',
-    name: 'Tomas Silva',
-    role: 'QA Engineer',
-    avatar: '/images/user/user-06.jpg',
-    capacityHours: 52,
-  },
-]
-
 /**
- * The people shown on the board. Mirrors the workspace member list so anyone
- * added during registration — or later in Team settings — is immediately
- * assignable, and falls back to the demo roster before registration.
+ * The people shown on the board — a projection of the workspace member list,
+ * so anyone added during registration or later in Team settings is
+ * immediately assignable. Empty until a workspace exists.
  */
-const team = reactive<TeamMember[]>([...DEMO_TEAM])
+const team = reactive<TeamMember[]>([])
 
 const workspaceMembers = useWorkspace().members
 
@@ -257,520 +241,27 @@ const syncTeam = () => {
       accent: member.accent,
       initials: initialsOf(member),
     }))
-  team.splice(0, team.length, ...(next.length ? next : DEMO_TEAM))
+  team.splice(0, team.length, ...next)
 }
 
 watch(workspaceMembers, syncTeam, { deep: true, immediate: true })
 watch(workspaceVersion, syncTeam)
 
-const sprints: Sprint[] = [
-  {
-    id: 's1',
-    name: 'Sprint 22',
-    goal: 'Ship the reporting export pipeline.',
-    state: 'completed',
-    startDate: addDays(MONDAY, -28),
-    endDate: addDays(MONDAY, -15),
-  },
-  {
-    id: 's2',
-    name: 'Sprint 23',
-    goal: 'Reduce onboarding drop-off to under 20%.',
-    state: 'completed',
-    startDate: addDays(MONDAY, -14),
-    endDate: addDays(MONDAY, -1),
-  },
-  {
-    id: 's3',
-    name: 'Sprint 24',
-    goal: 'Time tracking on every issue, end to end.',
-    state: 'active',
-    startDate: MONDAY,
-    endDate: addDays(MONDAY, 13),
-  },
-  {
-    id: 's4',
-    name: 'Sprint 25',
-    goal: 'Capacity planning and workload balancing.',
-    state: 'planned',
-    startDate: addDays(MONDAY, 14),
-    endDate: addDays(MONDAY, 27),
-  },
-]
+/**
+ * Sprints and epics come from the database. A fresh workspace starts with the
+ * one sprint the registration wizard creates; epics are optional throughout.
+ */
+const sprints = reactive<Sprint[]>([])
+const epics = reactive<Epic[]>([])
 
-const epics = [
-  { id: 'e1', name: 'Time tracking', color: 'bg-brand-500' },
-  { id: 'e2', name: 'Planning & capacity', color: 'bg-success-500' },
-  { id: 'e3', name: 'Reporting', color: 'bg-orange-400' },
-  { id: 'e4', name: 'Platform health', color: 'bg-blue-light-500' },
-]
+const issues = reactive<Issue[]>([])
 
-/* ------------------------------------------------------------------ *
- * Seed issues
- * ------------------------------------------------------------------ */
-
-type SeedIssue = Omit<
-  Issue,
-  'loggedHours' | 'completedAt' | 'description' | 'order' | 'coverColor' | 'checklist'
-> &
-  Partial<Pick<Issue, 'loggedHours' | 'completedAt' | 'description' | 'coverColor'>>
-
-const seed: SeedIssue[] = [
-  // --- Active sprint: done -------------------------------------------------
-  {
-    id: 'ZT-118',
-    title: 'Worklog entry form on the issue detail panel',
-    type: 'story',
-    status: 'done',
-    priority: 'high',
-    assigneeId: 'u2',
-    sprintId: 's3',
-    epicId: 'e1',
-    estimateHours: 12,
-    loggedHours: 13,
-    storyPoints: 5,
-    startDate: MONDAY,
-    dueDate: addDays(MONDAY, 2),
-    completedAt: addDays(MONDAY, 2),
-    labels: ['frontend'],
-  },
-  {
-    id: 'ZT-119',
-    title: 'Persist worklog entries against the issue timeline',
-    type: 'task',
-    status: 'done',
-    priority: 'high',
-    assigneeId: 'u4',
-    sprintId: 's3',
-    epicId: 'e1',
-    estimateHours: 10,
-    loggedHours: 9,
-    storyPoints: 3,
-    startDate: MONDAY,
-    dueDate: addDays(MONDAY, 3),
-    completedAt: addDays(MONDAY, 3),
-    labels: ['backend', 'api'],
-  },
-  {
-    id: 'ZT-121',
-    title: 'Sprint header shows remaining working days',
-    type: 'task',
-    status: 'done',
-    priority: 'medium',
-    assigneeId: 'u3',
-    sprintId: 's3',
-    epicId: 'e2',
-    estimateHours: 6,
-    loggedHours: 5,
-    storyPoints: 2,
-    startDate: addDays(MONDAY, 1),
-    dueDate: addDays(MONDAY, 4),
-    completedAt: addDays(MONDAY, 4),
-    labels: ['frontend'],
-  },
-  // --- Active sprint: in review -------------------------------------------
-  {
-    id: 'ZT-124',
-    title: 'Estimate vs logged variance badge on cards',
-    type: 'story',
-    status: 'review',
-    priority: 'medium',
-    assigneeId: 'u2',
-    sprintId: 's3',
-    epicId: 'e1',
-    estimateHours: 8,
-    loggedHours: 7,
-    storyPoints: 3,
-    startDate: addDays(MONDAY, 3),
-    dueDate: addDays(MONDAY, 6),
-    labels: ['frontend'],
-  },
-  {
-    id: 'ZT-127',
-    title: 'Reject worklogs dated outside the sprint window',
-    type: 'bug',
-    status: 'review',
-    priority: 'high',
-    assigneeId: 'u6',
-    sprintId: 's3',
-    epicId: 'e1',
-    estimateHours: 4,
-    loggedHours: 5,
-    storyPoints: 2,
-    startDate: addDays(MONDAY, 4),
-    dueDate: addDays(MONDAY, 6),
-    labels: ['qa', 'validation'],
-  },
-  // --- Active sprint: in progress -----------------------------------------
-  {
-    id: 'ZT-129',
-    title: 'Burndown chart driven by real remaining hours',
-    type: 'story',
-    status: 'in_progress',
-    priority: 'highest',
-    assigneeId: 'u3',
-    sprintId: 's3',
-    epicId: 'e3',
-    estimateHours: 16,
-    loggedHours: 9,
-    storyPoints: 8,
-    startDate: addDays(MONDAY, 3),
-    dueDate: addDays(MONDAY, 8),
-    labels: ['reporting', 'charts'],
-  },
-  {
-    id: 'ZT-130',
-    title: 'Drag and drop between board columns',
-    type: 'story',
-    status: 'in_progress',
-    priority: 'high',
-    assigneeId: 'u2',
-    sprintId: 's3',
-    epicId: 'e2',
-    estimateHours: 10,
-    loggedHours: 4,
-    storyPoints: 5,
-    startDate: addDays(MONDAY, 5),
-    dueDate: addDays(MONDAY, 9),
-    labels: ['frontend'],
-  },
-  {
-    id: 'ZT-131',
-    title: 'Timeline lane rendering for epics',
-    type: 'task',
-    status: 'in_progress',
-    priority: 'medium',
-    assigneeId: 'u5',
-    sprintId: 's3',
-    epicId: 'e2',
-    estimateHours: 12,
-    loggedHours: 3,
-    storyPoints: 5,
-    startDate: addDays(MONDAY, 5),
-    dueDate: addDays(MONDAY, 10),
-    labels: ['design'],
-  },
-  {
-    id: 'ZT-133',
-    title: 'Worklog API returns 500 on concurrent writes',
-    type: 'bug',
-    status: 'in_progress',
-    priority: 'highest',
-    assigneeId: 'u4',
-    sprintId: 's3',
-    epicId: 'e4',
-    estimateHours: 8,
-    loggedHours: 6,
-    storyPoints: 3,
-    startDate: addDays(MONDAY, 6),
-    dueDate: addDays(MONDAY, 8),
-    labels: ['backend', 'incident'],
-  },
-  // --- Active sprint: to do ------------------------------------------------
-  {
-    id: 'ZT-136',
-    title: 'Capacity bar per assignee in the sprint header',
-    type: 'story',
-    status: 'todo',
-    priority: 'high',
-    assigneeId: 'u1',
-    sprintId: 's3',
-    epicId: 'e2',
-    estimateHours: 10,
-    storyPoints: 5,
-    startDate: addDays(MONDAY, 8),
-    dueDate: addDays(MONDAY, 11),
-    labels: ['planning'],
-  },
-  {
-    id: 'ZT-137',
-    title: 'Bulk move issues to the next sprint',
-    type: 'task',
-    status: 'todo',
-    priority: 'medium',
-    assigneeId: 'u3',
-    sprintId: 's3',
-    epicId: 'e2',
-    estimateHours: 6,
-    storyPoints: 3,
-    startDate: addDays(MONDAY, 9),
-    dueDate: addDays(MONDAY, 12),
-    labels: ['backlog'],
-  },
-  {
-    id: 'ZT-138',
-    title: 'Keyboard shortcuts for status transitions',
-    type: 'task',
-    status: 'todo',
-    priority: 'low',
-    assigneeId: 'u5',
-    sprintId: 's3',
-    epicId: 'e4',
-    estimateHours: 5,
-    storyPoints: 2,
-    startDate: addDays(MONDAY, 10),
-    dueDate: addDays(MONDAY, 13),
-    labels: ['a11y'],
-  },
-  {
-    id: 'ZT-139',
-    title: 'Regression pass on the worklog validation rules',
-    type: 'task',
-    status: 'todo',
-    priority: 'medium',
-    assigneeId: 'u6',
-    sprintId: 's3',
-    epicId: 'e1',
-    estimateHours: 8,
-    storyPoints: 3,
-    startDate: addDays(MONDAY, 10),
-    dueDate: addDays(MONDAY, 13),
-    labels: ['qa'],
-  },
-  // --- Next sprint (planned) ----------------------------------------------
-  {
-    id: 'ZT-141',
-    title: 'Workload rebalancing suggestions',
-    type: 'story',
-    status: 'todo',
-    priority: 'high',
-    assigneeId: 'u3',
-    sprintId: 's4',
-    epicId: 'e2',
-    estimateHours: 16,
-    storyPoints: 8,
-    startDate: addDays(MONDAY, 14),
-    dueDate: addDays(MONDAY, 20),
-    labels: ['planning'],
-  },
-  {
-    id: 'ZT-142',
-    title: 'Team capacity settings per sprint',
-    type: 'story',
-    status: 'todo',
-    priority: 'medium',
-    assigneeId: 'u1',
-    sprintId: 's4',
-    epicId: 'e2',
-    estimateHours: 12,
-    storyPoints: 5,
-    startDate: addDays(MONDAY, 15),
-    dueDate: addDays(MONDAY, 22),
-    labels: ['planning'],
-  },
-  {
-    id: 'ZT-143',
-    title: 'Velocity report with rolling three-sprint average',
-    type: 'story',
-    status: 'todo',
-    priority: 'medium',
-    assigneeId: 'u4',
-    sprintId: 's4',
-    epicId: 'e3',
-    estimateHours: 14,
-    storyPoints: 5,
-    startDate: addDays(MONDAY, 16),
-    dueDate: addDays(MONDAY, 24),
-    labels: ['reporting'],
-  },
-  // --- Backlog -------------------------------------------------------------
-  {
-    id: 'ZT-145',
-    title: 'Time-off calendar feeds into sprint capacity',
-    type: 'story',
-    status: 'backlog',
-    priority: 'high',
-    assigneeId: null,
-    sprintId: null,
-    epicId: 'e2',
-    estimateHours: 20,
-    storyPoints: 8,
-    startDate: null,
-    dueDate: null,
-    labels: ['planning'],
-  },
-  {
-    id: 'ZT-146',
-    title: 'Export timesheets as CSV per person and per sprint',
-    type: 'story',
-    status: 'backlog',
-    priority: 'medium',
-    assigneeId: null,
-    sprintId: null,
-    epicId: 'e3',
-    estimateHours: 12,
-    storyPoints: 5,
-    startDate: null,
-    dueDate: null,
-    labels: ['reporting'],
-  },
-  {
-    id: 'ZT-147',
-    title: 'Dependency links block issue start dates',
-    type: 'story',
-    status: 'backlog',
-    priority: 'high',
-    assigneeId: null,
-    sprintId: null,
-    epicId: 'e2',
-    estimateHours: 24,
-    storyPoints: 13,
-    startDate: null,
-    dueDate: null,
-    labels: ['timeline'],
-  },
-  {
-    id: 'ZT-148',
-    title: 'Idle timer stops logging after 30 minutes',
-    type: 'bug',
-    status: 'backlog',
-    priority: 'medium',
-    assigneeId: null,
-    sprintId: null,
-    epicId: 'e1',
-    estimateHours: 6,
-    storyPoints: 3,
-    startDate: null,
-    dueDate: null,
-    labels: ['tracking'],
-  },
-  {
-    id: 'ZT-149',
-    title: 'Slack notification when a sprint is at risk',
-    type: 'task',
-    status: 'backlog',
-    priority: 'low',
-    assigneeId: null,
-    sprintId: null,
-    epicId: 'e4',
-    estimateHours: 8,
-    storyPoints: 3,
-    startDate: null,
-    dueDate: null,
-    labels: ['integrations'],
-  },
-  {
-    id: 'ZT-150',
-    title: 'Archive completed sprints after 90 days',
-    type: 'task',
-    status: 'backlog',
-    priority: 'low',
-    assigneeId: null,
-    sprintId: null,
-    epicId: 'e4',
-    estimateHours: 5,
-    storyPoints: 2,
-    startDate: null,
-    dueDate: null,
-    labels: ['maintenance'],
-  },
-  // --- Closed sprints, kept for velocity ----------------------------------
-  {
-    id: 'ZT-104',
-    title: 'CSV export pipeline for reports',
-    type: 'story',
-    status: 'done',
-    priority: 'high',
-    assigneeId: 'u4',
-    sprintId: 's1',
-    epicId: 'e3',
-    estimateHours: 20,
-    loggedHours: 22,
-    storyPoints: 8,
-    startDate: addDays(MONDAY, -28),
-    dueDate: addDays(MONDAY, -18),
-    completedAt: addDays(MONDAY, -17),
-    labels: ['reporting'],
-  },
-  {
-    id: 'ZT-106',
-    title: 'Scheduled report delivery',
-    type: 'story',
-    status: 'done',
-    priority: 'medium',
-    assigneeId: 'u3',
-    sprintId: 's1',
-    epicId: 'e3',
-    estimateHours: 16,
-    loggedHours: 15,
-    storyPoints: 5,
-    startDate: addDays(MONDAY, -26),
-    dueDate: addDays(MONDAY, -16),
-    completedAt: addDays(MONDAY, -16),
-    labels: ['reporting'],
-  },
-  {
-    id: 'ZT-109',
-    title: 'Onboarding checklist component',
-    type: 'story',
-    status: 'done',
-    priority: 'high',
-    assigneeId: 'u2',
-    sprintId: 's2',
-    epicId: 'e4',
-    estimateHours: 14,
-    loggedHours: 12,
-    storyPoints: 5,
-    startDate: addDays(MONDAY, -14),
-    dueDate: addDays(MONDAY, -6),
-    completedAt: addDays(MONDAY, -6),
-    labels: ['frontend'],
-  },
-  {
-    id: 'ZT-112',
-    title: 'Guided tour for first-run projects',
-    type: 'story',
-    status: 'done',
-    priority: 'medium',
-    assigneeId: 'u5',
-    sprintId: 's2',
-    epicId: 'e4',
-    estimateHours: 18,
-    loggedHours: 20,
-    storyPoints: 8,
-    startDate: addDays(MONDAY, -12),
-    dueDate: addDays(MONDAY, -3),
-    completedAt: addDays(MONDAY, -2),
-    labels: ['design'],
-  },
-  {
-    id: 'ZT-114',
-    title: 'Drop-off funnel instrumentation',
-    type: 'task',
-    status: 'done',
-    priority: 'medium',
-    assigneeId: 'u4',
-    sprintId: 's2',
-    epicId: 'e3',
-    estimateHours: 10,
-    loggedHours: 11,
-    storyPoints: 3,
-    startDate: addDays(MONDAY, -10),
-    dueDate: addDays(MONDAY, -2),
-    completedAt: addDays(MONDAY, -2),
-    labels: ['analytics'],
-  },
-]
-
-const buildSeedIssues = (): Issue[] =>
-  seed.map((item, index) => ({
-    description:
-      'Tracked in the current plan. Update the estimate as soon as the work is broken down.',
-    loggedHours: 0,
-    completedAt: null,
-    order: index,
-    coverColor: '',
-    checklist: [] as ChecklistItem[],
-    ...item,
-  }))
-
-const issues = reactive<Issue[]>(buildSeedIssues())
 
 /* ------------------------------------------------------------------ *
  * Shared UI state
  * ------------------------------------------------------------------ */
 
-const activeSprintId = ref<string>('s3')
+const activeSprintId = ref<string>('')
 const selectedIssueId = ref<string | null>(null)
 let issueCounter = 150
 
@@ -779,52 +270,99 @@ let issueCounter = 150
  * ------------------------------------------------------------------ */
 
 interface BoardSnapshot {
+  boards: Board[]
+  activeBoardId: string
   issues: Issue[]
+  sprints: Sprint[]
+  epics: Epic[]
   columns: StatusColumn[]
   activeSprintId: string
   issueCounter: number
 }
 
+/** The active board's live columns plus every parked board's set. */
+const allColumns = (): StatusColumn[] => {
+  const parked = [...columnsByBoard.entries()]
+    .filter(([boardId]) => boardId !== activeBoardId.value)
+    .flatMap(([, columns]) => columns)
+  return [...parked, ...statusColumns.map((column) => ({ ...column }))]
+}
+
 let isRestoringBoard = true
+/** Set once the user edits, so a slow server response cannot overwrite them. */
+let isBoardDirty = false
 
 const saveBoard = () => {
   if (isRestoringBoard) return
-  try {
-    const snapshot: BoardSnapshot = {
-      issues: issues.map((issue) => ({ ...issue })),
-      columns: statusColumns.map((column) => ({ ...column })),
-      activeSprintId: activeSprintId.value,
-      issueCounter,
-    }
-    localStorage.setItem(BOARD_STORAGE_KEY, JSON.stringify(snapshot))
-  } catch {
-    // Storage unavailable: the board still works for this session.
-  }
+  isBoardDirty = true
+  syncSave('board', BOARD_STORAGE_KEY, {
+    boards: boards.map((board) => ({ ...board })),
+    activeBoardId: activeBoardId.value,
+    issues: issues.map((issue) => ({ ...issue })),
+    sprints: sprints.map((sprint) => ({ ...sprint })),
+    epics: epics.map((epic) => ({ ...epic })),
+    columns: allColumns(),
+    activeSprintId: activeSprintId.value,
+    issueCounter,
+  } satisfies BoardSnapshot)
 }
 
+const applyBoard = (snapshot: Partial<BoardSnapshot> | null) => {
+  if (!snapshot) return
+
+  if (Array.isArray(snapshot.boards)) {
+    boards.splice(0, boards.length, ...snapshot.boards)
+  }
+  // Keep the stored choice when that board still exists. A workspace with a
+  // single board selects it automatically; beyond that the user picks.
+  const stored = snapshot.activeBoardId
+  const open = boards.filter((board) => !board.archived)
+  activeBoardId.value =
+    stored && boards.some((board) => board.id === stored)
+      ? stored
+      : open.length === 1
+        ? open[0].id
+        : ''
+
+  if (Array.isArray(snapshot.sprints)) {
+    sprints.splice(0, sprints.length, ...snapshot.sprints)
+  }
+  if (Array.isArray(snapshot.epics)) {
+    epics.splice(0, epics.length, ...snapshot.epics)
+  }
+  if (Array.isArray(snapshot.columns) && snapshot.columns.length) {
+    // Split one flat list back into "the open board's" and "everyone else's".
+    columnsByBoard.clear()
+    for (const column of snapshot.columns) {
+      const boardId = column.boardId ?? ''
+      if (!columnsByBoard.has(boardId)) columnsByBoard.set(boardId, [])
+      columnsByBoard.get(boardId)!.push(column)
+    }
+    const active = columnsByBoard.get(activeBoardId.value) ?? []
+    statusColumns.splice(0, statusColumns.length, ...active.sort((a, b) => a.order - b.order))
+    syncStatusLabels()
+  }
+  if (Array.isArray(snapshot.issues)) {
+    issues.splice(
+      0,
+      issues.length,
+      ...snapshot.issues.map((issue, index) => ({
+        ...issue,
+        coverColor: issue.coverColor ?? '',
+        checklist: issue.checklist ?? [],
+        order: issue.order ?? index,
+      })),
+    )
+  }
+  if (snapshot.activeSprintId) activeSprintId.value = snapshot.activeSprintId
+  if (typeof snapshot.issueCounter === 'number') issueCounter = snapshot.issueCounter
+}
+
+/** Paint from the local mirror immediately, then reconcile with the database. */
 const restoreBoard = () => {
   try {
     const raw = localStorage.getItem(BOARD_STORAGE_KEY)
-    if (!raw) return
-    const snapshot = JSON.parse(raw) as Partial<BoardSnapshot>
-    if (Array.isArray(snapshot.columns) && snapshot.columns.length) {
-      statusColumns.splice(0, statusColumns.length, ...snapshot.columns)
-      syncStatusLabels()
-    }
-    if (Array.isArray(snapshot.issues)) {
-      issues.splice(
-        0,
-        issues.length,
-        ...snapshot.issues.map((issue, index) => ({
-          ...issue,
-          coverColor: issue.coverColor ?? '',
-          checklist: issue.checklist ?? [],
-          order: issue.order ?? index,
-        })),
-      )
-    }
-    if (snapshot.activeSprintId) activeSprintId.value = snapshot.activeSprintId
-    if (typeof snapshot.issueCounter === 'number') issueCounter = snapshot.issueCounter
+    if (raw) applyBoard(JSON.parse(raw) as Partial<BoardSnapshot>)
   } catch {
     // Corrupt payload: keep the seeded board.
   }
@@ -833,15 +371,166 @@ const restoreBoard = () => {
 restoreBoard()
 isRestoringBoard = false
 
-watch([issues, statusColumns, activeSprintId], saveBoard, { deep: true })
+watch([issues, sprints, epics, boards, statusColumns, activeSprintId, activeBoardId], saveBoard, {
+  deep: true,
+})
+
+void syncLoad<BoardSnapshot>(
+  'board',
+  BOARD_STORAGE_KEY,
+  (value) => !value.boards?.length && !value.issues?.length,
+).then(
+  (remote) => {
+    if (!remote || isBoardDirty) return
+    isRestoringBoard = true
+    applyBoard(remote)
+    isRestoringBoard = false
+  },
+)
 
 /* ------------------------------------------------------------------ *
  * Store
  * ------------------------------------------------------------------ */
 
 export function usePlanner() {
-  const activeSprint = computed(
-    () => sprints.find((sprint) => sprint.id === activeSprintId.value) ?? sprints[2],
+  /* ---------------- Boards ---------------- */
+
+  const activeBoards = computed(() => boards.filter((board) => !board.archived))
+
+  /**
+   * The board currently open, or null when none is chosen.
+   *
+   * Deliberately no "just take the first one" fallback: with several client
+   * engagements in the workspace, silently showing an arbitrary board is worse
+   * than showing nothing and asking which one.
+   */
+  const activeBoard = computed<Board | null>(
+    () => boards.find((board) => board.id === activeBoardId.value) ?? null,
+  )
+
+  const boardById = (id: string | null) =>
+    id ? boards.find((board) => board.id === id) : undefined
+
+  /** Everything below is scoped to the board currently open. */
+  const boardIssues = computed(() =>
+    issues.filter((issue) => issue.boardId === activeBoard.value?.id),
+  )
+  const boardSprints = computed(() =>
+    sprints.filter((sprint) => sprint.boardId === activeBoard.value?.id),
+  )
+  const boardEpics = computed(() => epics.filter((epic) => epic.boardId === activeBoard.value?.id))
+
+  const createBoard = (input: Partial<Board> = {}): Board => {
+    const board: Board = {
+      id: input.id ?? `b-${Math.random().toString(36).slice(2, 8)}`,
+      name: input.name?.trim() || `Board ${boards.length + 1}`,
+      client: input.client?.trim() ?? '',
+      description: input.description?.trim() ?? '',
+      color: input.color ?? columnColors[boards.length % columnColors.length],
+      projectId: input.projectId ?? null,
+      archived: false,
+      createdAt: new Date().toISOString(),
+    }
+    boards.push(board)
+    // A board needs columns and somewhere to plan, or its board view opens on
+    // an empty screen with no way forward.
+    columnsByBoard.set(board.id, defaultColumns(board.id))
+    createSprint({ boardId: board.id, name: 'Sprint 1', state: 'active' })
+    if (!activeBoardId.value) switchBoard(board.id)
+    return board
+  }
+
+  /**
+   * Opens another board: parks the current columns, loads the target's.
+   * The active sprint follows, so the sprint header never shows a sprint that
+   * belongs to a different client.
+   */
+  const switchBoard = (id: string) => {
+    if (!boards.some((board) => board.id === id)) return
+    if (activeBoardId.value && activeBoardId.value !== id) {
+      columnsByBoard.set(
+        activeBoardId.value,
+        statusColumns.map((column) => ({ ...column })),
+      )
+    }
+    activeBoardId.value = id
+    const next = columnsByBoard.get(id) ?? defaultColumns(id)
+    columnsByBoard.set(id, next)
+    statusColumns.splice(0, statusColumns.length, ...next.map((column) => ({ ...column })))
+    syncStatusLabels()
+    selectedIssueId.value = null
+
+    const sprint =
+      sprints.find((item) => item.boardId === id && item.state === 'active') ??
+      sprints.find((item) => item.boardId === id)
+    activeSprintId.value = sprint?.id ?? ''
+  }
+
+  const updateBoard = (id: string, patch: Partial<Board>) => {
+    const board = boardById(id)
+    if (board) Object.assign(board, patch)
+  }
+
+  const archiveBoard = (id: string, archived = true) => {
+    updateBoard(id, { archived })
+    if (archived && activeBoardId.value === id) {
+      const next = activeBoards.value[0]
+      if (next) switchBoard(next.id)
+      else activeBoardId.value = ''
+    }
+  }
+
+  /** Removes the board together with its issues, sprints, epics and columns. */
+  const deleteBoard = (id: string) => {
+    const index = boards.findIndex((board) => board.id === id)
+    if (index === -1) return
+    boards.splice(index, 1)
+    columnsByBoard.delete(id)
+    for (const list of [issues, sprints, epics] as { boardId: string }[][]) {
+      for (let i = list.length - 1; i >= 0; i -= 1) {
+        if (list[i].boardId === id) list.splice(i, 1)
+      }
+    }
+    if (activeBoardId.value === id) {
+      const next = activeBoards.value[0]
+      if (next) switchBoard(next.id)
+      else activeBoardId.value = ''
+    }
+  }
+
+  /** One row per board for the overview screen. */
+  const boardSummaries = computed(() =>
+    boards.map((board) => {
+      const own = issues.filter((issue) => issue.boardId === board.id)
+      const done = own.filter((issue) => issue.status === 'done')
+      const sprint =
+        sprints.find((item) => item.boardId === board.id && item.state === 'active') ?? null
+      return {
+        board,
+        sprint,
+        issues: own.length,
+        done: done.length,
+        percent: own.length ? Math.round((done.length / own.length) * 100) : 0,
+        estimate: own.reduce((sum, issue) => sum + issue.estimateHours, 0),
+        logged: own.reduce((sum, issue) => sum + issue.loggedHours, 0),
+        overdue: own.filter(
+          (issue) => issue.status !== 'done' && issue.dueDate !== null && issue.dueDate < today,
+        ).length,
+      }
+    }),
+  )
+
+  /**
+   * The sprint the board is showing, or null when the workspace has none.
+   * Consumers must guard: a brand-new workspace has no sprint until one is
+   * created.
+   */
+  const activeSprint = computed<Sprint | null>(
+    () =>
+      boardSprints.value.find((sprint) => sprint.id === activeSprintId.value) ??
+      boardSprints.value.find((sprint) => sprint.state === 'active') ??
+      boardSprints.value[0] ??
+      null,
   )
 
   const memberById = (id: string | null): TeamMember | undefined =>
@@ -854,10 +543,14 @@ export function usePlanner() {
   const issueById = (id: string | null) => issues.find((issue) => issue.id === id)
 
   const sprintIssues = computed(() =>
-    issues.filter((issue) => issue.sprintId === activeSprint.value.id),
+    activeSprint.value
+      ? boardIssues.value.filter((issue) => issue.sprintId === activeSprint.value?.id)
+      : [],
   )
 
-  const backlogIssues = computed(() => issues.filter((issue) => issue.sprintId === null))
+  const backlogIssues = computed(() =>
+    boardIssues.value.filter((issue) => issue.sprintId === null),
+  )
 
   const issuesByStatus = (status: IssueStatus, list?: Issue[]) =>
     (list ?? sprintIssues.value).filter((issue) => issue.status === status)
@@ -933,6 +626,7 @@ export function usePlanner() {
         name,
         statusColumns.map((item) => item.id),
       ),
+      boardId: activeBoard.value?.id ?? '',
       name: name.trim() || 'New column',
       color,
       wipLimit: null,
@@ -1026,6 +720,7 @@ export function usePlanner() {
       taken.push(id)
       return {
         id,
+        boardId: activeBoard.value?.id ?? '',
         name: column.name,
         color: column.color,
         wipLimit: column.wipLimit,
@@ -1043,8 +738,6 @@ export function usePlanner() {
       return
     }
 
-    issues.splice(0, issues.length, ...buildSeedIssues())
-
     issues.forEach((issue, index) => {
       if (issue.status === 'backlog') return
       const previousIndex = previous.indexOf(issue.status)
@@ -1058,9 +751,55 @@ export function usePlanner() {
     next.forEach((column) => normaliseOrder(column.id))
   }
 
+  /* ---------------- Sprints ---------------- */
+
+  /**
+   * Creates a sprint. A new workspace gets its first one from the registration
+   * wizard; after that they are created from the sprint header.
+   */
+  const createSprint = (input: Partial<Sprint> = {}): Sprint => {
+    const start = input.startDate ?? today
+    const sprint: Sprint = {
+      id: input.id ?? `s-${Math.random().toString(36).slice(2, 8)}`,
+      boardId: input.boardId ?? activeBoard.value?.id ?? '',
+      name: input.name?.trim() || `Sprint ${sprints.length + 1}`,
+      goal: input.goal?.trim() ?? '',
+      state: input.state ?? 'active',
+      startDate: start,
+      // Two weeks is the default cadence the capacity figures assume.
+      endDate: input.endDate ?? addDays(start, 13),
+    }
+    sprints.push(sprint)
+    // Only take over the header when the sprint belongs to the open board.
+    if (
+      sprint.boardId === activeBoard.value?.id &&
+      (!activeSprintId.value || sprint.state === 'active')
+    ) {
+      activeSprintId.value = sprint.id
+    }
+    return sprint
+  }
+
+  const updateSprint = (id: string, patch: Partial<Sprint>) => {
+    const sprint = sprints.find((item) => item.id === id)
+    if (sprint) Object.assign(sprint, patch)
+  }
+
+  const deleteSprint = (id: string) => {
+    const index = sprints.findIndex((sprint) => sprint.id === id)
+    if (index === -1) return
+    sprints.splice(index, 1)
+    // Orphaned issues fall back to the backlog rather than disappearing.
+    issues.forEach((issue) => {
+      if (issue.sprintId === id) issue.sprintId = null
+    })
+    if (activeSprintId.value === id) activeSprintId.value = sprints[0]?.id ?? ''
+  }
+
+  /** Clears the board back to the default columns and no issues. */
   const resetBoard = () => {
-    statusColumns.splice(0, statusColumns.length, ...defaultColumns())
-    issues.splice(0, issues.length, ...buildSeedIssues())
+    statusColumns.splice(0, statusColumns.length, ...defaultColumns(activeBoard.value?.id ?? ''))
+    issues.splice(0, issues.length)
     selectedIssueId.value = null
     syncStatusLabels()
   }
@@ -1069,13 +808,14 @@ export function usePlanner() {
     issueCounter += 1
     const issue: Issue = {
       id: `ZT-${issueCounter}`,
+      boardId: input.boardId ?? activeBoard.value?.id ?? '',
       title: input.title?.trim() || 'Untitled issue',
       description: input.description ?? '',
       type: input.type ?? 'task',
       status: input.status ?? 'todo',
       priority: input.priority ?? 'medium',
       assigneeId: input.assigneeId ?? null,
-      sprintId: input.sprintId ?? activeSprint.value.id,
+      sprintId: input.sprintId ?? activeSprint.value?.id ?? null,
       epicId: input.epicId ?? null,
       estimateHours: input.estimateHours ?? 4,
       loggedHours: 0,
@@ -1099,10 +839,29 @@ export function usePlanner() {
     if (selectedIssueId.value === id) selectedIssueId.value = null
   }
 
-  const logTime = (id: string, hours: number) => {
+  /**
+   * Books time on an issue and mirrors it into the Leistungsnachweis records,
+   * so hours logged on the board can be invoiced without retyping them.
+   * `meta` lets the caller supply the columns the record needs; sensible
+   * defaults keep every existing call site working unchanged.
+   */
+  const logTime = (
+    id: string,
+    hours: number,
+    meta: { date?: string; category?: string; description?: string } = {},
+  ) => {
     const issue = issueById(id)
     if (!issue || hours <= 0) return
     issue.loggedHours = Math.round((issue.loggedHours + hours) * 10) / 10
+
+    recordTimeEntry({
+      date: meta.date,
+      category: meta.category,
+      hours,
+      memberId: issue.assigneeId ?? '',
+      description: meta.description?.trim() || issue.title,
+      issueId: issue.id,
+    })
   }
 
   /* ---------------- Derived metrics ---------------- */
@@ -1128,6 +887,7 @@ export function usePlanner() {
   })
 
   const sprintDays = computed(() => {
+    if (!activeSprint.value) return { total: 0, elapsed: 0, remaining: 0 }
     const { startDate, endDate } = activeSprint.value
     const total = daysBetween(startDate, endDate) + 1
     const elapsed = Math.min(Math.max(daysBetween(startDate, today) + 1, 0), total)
@@ -1136,8 +896,11 @@ export function usePlanner() {
 
   /** Remaining-hours burndown: ideal line against what is actually left. */
   const burndown = computed(() => {
+    const empty = { categories: [] as string[], ideal: [] as number[], actual: [] as (number | null)[] }
+    if (!activeSprint.value) return empty
     const { startDate } = activeSprint.value
     const { total } = sprintDays.value
+    if (total < 2) return empty
     const totalEstimate = sprintTotals.value.estimate
     const list = sprintIssues.value
 
@@ -1166,7 +929,7 @@ export function usePlanner() {
 
   /** Committed vs completed story points for every closed sprint. */
   const velocity = computed(() => {
-    const closed = sprints.filter((sprint) => sprint.state !== 'planned')
+    const closed = boardSprints.value.filter((sprint) => sprint.state !== 'planned')
     return {
       categories: closed.map((sprint) => sprint.name),
       committed: closed.map((sprint) =>
@@ -1198,24 +961,38 @@ export function usePlanner() {
   )
 
   const upcomingDeadlines = computed(() =>
-    issues
+    boardIssues.value
       .filter((issue) => issue.status !== 'done' && issue.dueDate !== null)
       .sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : 1))
       .slice(0, 6),
   )
 
   const overdueIssues = computed(() =>
-    issues.filter(
+    boardIssues.value.filter(
       (issue) => issue.status !== 'done' && issue.dueDate !== null && issue.dueDate < today,
     ),
   )
 
   return {
-    // reference data
+    // boards
+    boards,
+    activeBoards,
+    activeBoard,
+    activeBoardId,
+    boardById,
+    boardSummaries,
+    createBoard,
+    switchBoard,
+    updateBoard,
+    archiveBoard,
+    deleteBoard,
+    // reference data, scoped to the open board
     team,
-    sprints,
-    epics,
-    issues,
+    sprints: boardSprints,
+    epics: boardEpics,
+    issues: boardIssues,
+    /** Every issue in the workspace, for cross-board views. */
+    allIssues: issues,
     statusColumns,
     // state
     activeSprintId,
@@ -1250,6 +1027,10 @@ export function usePlanner() {
     toggleColumnCollapsed,
     applyBoardTemplate,
     resetBoard,
+    // sprints
+    createSprint,
+    updateSprint,
+    deleteSprint,
     // checklists
     addChecklistItem,
     toggleChecklistItem,

@@ -29,8 +29,24 @@ export interface ChecklistItem {
   done: boolean
 }
 
+/** A board is one client engagement: its own columns, sprints and issues. */
+export interface Board {
+  id: string
+  name: string
+  /** Auftraggeber this board delivers for. */
+  client: string
+  description: string
+  /** Hex accent used for the board's dot and header. */
+  color: string
+  /** Billing project the logged hours belong to, when one is linked. */
+  projectId: string | null
+  archived: boolean
+  createdAt: string
+}
+
 export interface Sprint {
   id: string
+  boardId: string
   name: string
   goal: string
   state: SprintState
@@ -42,6 +58,7 @@ export interface Sprint {
 
 export interface Issue {
   id: string
+  boardId: string
   title: string
   description: string
   type: IssueType
@@ -66,6 +83,7 @@ export interface Issue {
 
 export interface StatusColumn {
   id: IssueStatus
+  boardId: string
   name: string
   /** Hex colour for the column dot and header accent. */
   color: string
@@ -82,4 +100,12 @@ export interface BoardTemplate {
   name: string
   description: string
   columns: { name: string; color: string; wipLimit: number | null }[]
+}
+
+export interface Epic {
+  id: string
+  boardId: string
+  name: string
+  /** Tailwind background class used for the dot and progress bar. */
+  color: string
 }

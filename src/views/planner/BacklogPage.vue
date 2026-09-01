@@ -2,7 +2,9 @@
   <AdminLayout>
     <PageBreadcrumb page-title="Backlog" />
 
-    <div class="flex flex-col gap-6">
+    <BoardPicker v-if="!activeBoard" />
+
+    <div v-else class="flex flex-col gap-6">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <p class="text-theme-sm text-gray-500 dark:text-gray-400">
           Drag issues between the sprints and the backlog to plan the next two weeks.
@@ -129,6 +131,7 @@ import { computed, ref } from 'vue'
 import draggable from 'vuedraggable'
 import AdminLayout from '@/components/layout/AdminLayout.vue'
 import PageBreadcrumb from '@/components/common/PageBreadcrumb.vue'
+import BoardPicker from '@/components/planner/BoardPicker.vue'
 import IssueTypeIcon from '@/components/planner/IssueTypeIcon.vue'
 import PriorityIcon from '@/components/planner/PriorityIcon.vue'
 import UserAvatar from '@/components/planner/UserAvatar.vue'
@@ -137,15 +140,15 @@ import NewIssueModal from '@/components/planner/NewIssueModal.vue'
 import { formatDate, usePlanner } from '@/composables/usePlanner'
 import type { Issue } from '@/types/planner'
 
-const { issues, sprints, memberById, selectIssue, updateIssue } = usePlanner()
+const { issues, sprints, memberById, selectIssue, updateIssue, activeBoard } = usePlanner()
 
 const isCreateOpen = ref(false)
 
-const openSprints = computed(() => sprints.filter((sprint) => sprint.state !== 'completed'))
+const openSprints = computed(() => sprints.value.filter((sprint) => sprint.state !== 'completed'))
 
 const groups = computed(() => {
   const sprintGroups = openSprints.value.map((sprint) => {
-    const list = issues.filter((issue) => issue.sprintId === sprint.id)
+    const list = issues.value.filter((issue) => issue.sprintId === sprint.id)
     return {
       key: sprint.id,
       sprintId: sprint.id as string | null,
@@ -162,7 +165,7 @@ const groups = computed(() => {
     }
   })
 
-  const backlog = issues.filter((issue) => issue.sprintId === null)
+  const backlog = issues.value.filter((issue) => issue.sprintId === null)
 
   return [
     ...sprintGroups,

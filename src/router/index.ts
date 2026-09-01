@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useWorkspace } from '@/composables/useWorkspace'
+import { useWorkspace, workspaceReady } from '@/composables/useWorkspace'
 
 /** Reachable without a workspace. Everything else redirects to registration. */
 const PUBLIC_ROUTES = ['/', '/register', '/signin', '/signup']
@@ -24,6 +24,14 @@ const router = createRouter({
       component: () => import('../views/planner/DashboardPage.vue'),
       meta: {
         title: 'Dashboard',
+      },
+    },
+    {
+      path: '/boards',
+      name: 'Boards',
+      component: () => import('../views/planner/BoardsPage.vue'),
+      meta: {
+        title: 'Boards',
       },
     },
     {
@@ -99,11 +107,43 @@ const router = createRouter({
       },
     },
     {
+      path: '/projects',
+      name: 'Projects',
+      component: () => import('../views/records/ProjectsPage.vue'),
+      meta: {
+        title: 'Projekte',
+      },
+    },
+    {
+      path: '/time',
+      name: 'Time tracking',
+      component: () => import('../views/records/TimeEntriesPage.vue'),
+      meta: {
+        title: 'Zeiterfassung',
+      },
+    },
+    {
+      path: '/records',
+      name: 'Service records',
+      component: () => import('../views/records/RecordsPage.vue'),
+      meta: {
+        title: 'Leistungsnachweis',
+      },
+    },
+    {
       path: '/settings/appearance',
       name: 'Appearance',
       component: () => import('../views/Settings/AppearanceSettings.vue'),
       meta: {
         title: 'Appearance',
+      },
+    },
+    {
+      path: '/settings/import',
+      name: 'Migration',
+      component: () => import('../views/Settings/ImportPage.vue'),
+      meta: {
+        title: 'Migration',
       },
     },
     {
@@ -125,7 +165,7 @@ const router = createRouter({
     {
       path: '/signin',
       name: 'Signin',
-      component: () => import('../views/Auth/Signin.vue'),
+      component: () => import('../views/Auth/SignInPage.vue'),
       meta: {
         title: 'Sign In',
       },
@@ -133,7 +173,7 @@ const router = createRouter({
     {
       path: '/signup',
       name: 'Signup',
-      component: () => import('../views/Auth/Signup.vue'),
+      component: () => import('../views/Auth/SignUpPage.vue'),
       meta: {
         title: 'Sign Up',
       },
@@ -151,8 +191,12 @@ const router = createRouter({
 
 export default router
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   document.title = `${to.meta.title} | Zetoo — Sprint & Time Planning`
+
+  // The workspace arrives from the database asynchronously. Deciding before it
+  // lands would send every reload to the registration wizard.
+  await workspaceReady
 
   const { isRegistered } = useWorkspace()
 

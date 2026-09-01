@@ -297,7 +297,6 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import AdminLayout from '@/components/layout/AdminLayout.vue'
 import PageBreadcrumb from '@/components/common/PageBreadcrumb.vue'
 import {
@@ -313,9 +312,9 @@ import { boardTemplates, formatDate, usePlanner } from '@/composables/usePlanner
 import { useAppearance } from '@/composables/useAppearance'
 import ZSelect from '@/components/ui/ZSelect.vue'
 import { toOptions } from '@/utils/options'
+import { resetEverything } from '@/utils/sync'
 import type { CompanySize } from '@/types/company'
 
-const router = useRouter()
 const { company, members, updateCompany, resetWorkspace } = useWorkspace()
 const { applyBoardTemplate, resetBoard } = usePlanner()
 const { appearance } = useAppearance()
@@ -386,8 +385,10 @@ const switchTemplate = (templateId: string) => {
 
 const resetBoardOnly = () => resetBoard()
 
-const destroy = () => {
+const destroy = async () => {
+  // Clears the database and this browser's mirror before reloading into the
+  // registration wizard; `resetEverything` navigates once both are gone.
   resetWorkspace()
-  router.push('/register')
+  await resetEverything()
 }
 </script>

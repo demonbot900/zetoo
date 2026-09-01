@@ -60,43 +60,8 @@
               <HorizontalDots v-else />
             </h2>
             <ul class="flex flex-col gap-4">
-              <li v-for="(item, index) in menuGroup.items" :key="item.name">
-                <button
-                  v-if="item.subItems"
-                  @click="toggleSubmenu(groupIndex, index)"
-                  :class="[
-                    'menu-item group w-full',
-                    {
-                      'menu-item-active': isSubmenuOpen(groupIndex, index),
-                      'menu-item-inactive': !isSubmenuOpen(groupIndex, index),
-                    },
-                    !isExpanded && !isHovered ? 'lg:justify-center' : 'lg:justify-start',
-                  ]"
-                >
-                  <span
-                    :class="[
-                      isSubmenuOpen(groupIndex, index)
-                        ? 'menu-item-icon-active'
-                        : 'menu-item-icon-inactive',
-                    ]"
-                  >
-                    <component :is="item.icon" />
-                  </span>
-                  <span v-if="isExpanded || isHovered || isMobileOpen" class="menu-item-text">{{
-                    item.name
-                  }}</span>
-                  <ChevronDownIcon
-                    v-if="isExpanded || isHovered || isMobileOpen"
-                    :class="[
-                      'ml-auto w-5 h-5 transition-transform duration-200',
-                      {
-                        'rotate-180 text-brand-500': isSubmenuOpen(groupIndex, index),
-                      },
-                    ]"
-                  />
-                </button>
+              <li v-for="item in menuGroup.items" :key="item.name">
                 <router-link
-                  v-else-if="item.path"
                   :to="item.path"
                   :class="[
                     'menu-item group',
@@ -117,61 +82,6 @@
                     item.name
                   }}</span>
                 </router-link>
-                <transition
-                  @enter="startTransition"
-                  @after-enter="endTransition"
-                  @before-leave="startTransition"
-                  @after-leave="endTransition"
-                >
-                  <div
-                    v-show="
-                      isSubmenuOpen(groupIndex, index) && (isExpanded || isHovered || isMobileOpen)
-                    "
-                  >
-                    <ul class="mt-2 space-y-1 ml-9">
-                      <li v-for="subItem in item.subItems" :key="subItem.name">
-                        <router-link
-                          :to="subItem.path"
-                          :class="[
-                            'menu-dropdown-item',
-                            {
-                              'menu-dropdown-item-active': isActive(subItem.path),
-                              'menu-dropdown-item-inactive': !isActive(subItem.path),
-                            },
-                          ]"
-                        >
-                          {{ subItem.name }}
-                          <span class="flex items-center gap-1 ml-auto">
-                            <span
-                              v-if="subItem.new"
-                              :class="[
-                                'menu-dropdown-badge',
-                                {
-                                  'menu-dropdown-badge-active': isActive(subItem.path),
-                                  'menu-dropdown-badge-inactive': !isActive(subItem.path),
-                                },
-                              ]"
-                            >
-                              new
-                            </span>
-                            <span
-                              v-if="subItem.pro"
-                              :class="[
-                                'menu-dropdown-badge',
-                                {
-                                  'menu-dropdown-badge-active': isActive(subItem.path),
-                                  'menu-dropdown-badge-inactive': !isActive(subItem.path),
-                                },
-                              ]"
-                            >
-                              pro
-                            </span>
-                          </span>
-                        </router-link>
-                      </li>
-                    </ul>
-                  </div>
-                </transition>
               </li>
             </ul>
           </div>
@@ -182,8 +92,8 @@
   </aside>
 </template>
 
-<script setup>
-import { ref, computed } from 'vue'
+<script setup lang="ts">
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 import {
@@ -192,12 +102,14 @@ import {
   UserCircleIcon,
   UserGroupIcon,
   PieChartIcon,
-  ChevronDownIcon,
   HorizontalDots,
   SettingsIcon,
   TableIcon,
   ListIcon,
   TaskIcon,
+  FolderIcon,
+  DraftIcon,
+  DocsIcon,
 } from '../../icons'
 import SidebarWidget from './SidebarWidget.vue'
 import ZetooLogo from '@/components/common/ZetooLogo.vue'
@@ -224,7 +136,7 @@ const monogram = computed(
       .join('') || 'Z',
 )
 
-const { isExpanded, isMobileOpen, isHovered, openSubmenu } = useSidebar()
+const { isExpanded, isMobileOpen, isHovered } = useSidebar()
 
 // Labels come from the message catalogue so the navigation follows the
 // language picked in the header.
@@ -233,6 +145,7 @@ const menuGroups = computed(() => [
     title: t('group.planning'),
     items: [
       { icon: GridIcon, name: t('nav.dashboard'), path: '/dashboard' },
+      { icon: TableIcon, name: t('nav.boards'), path: '/boards' },
       { icon: BoxCubeIcon, name: t('nav.board'), path: '/board' },
       { icon: ListIcon, name: t('nav.backlog'), path: '/backlog' },
       { icon: TaskIcon, name: t('nav.timeline'), path: '/timeline' },
@@ -249,49 +162,22 @@ const menuGroups = computed(() => [
     ],
   },
   {
+    title: t('group.records'),
+    items: [
+      { icon: FolderIcon, name: t('nav.projects'), path: '/projects' },
+      { icon: DraftIcon, name: t('nav.time'), path: '/time' },
+      { icon: DocsIcon, name: t('nav.records'), path: '/records' },
+    ],
+  },
+  {
     title: t('group.workspace'),
     items: [
       { icon: BoxCubeIcon, name: t('nav.appearance'), path: '/settings/appearance' },
       { icon: SettingsIcon, name: t('nav.company'), path: '/settings/company' },
+      { icon: DraftIcon, name: t('nav.import'), path: '/settings/import' },
     ],
   },
 ])
 
-const isActive = (path) => route.path === path
-
-const toggleSubmenu = (groupIndex, itemIndex) => {
-  const key = `${groupIndex}-${itemIndex}`
-  openSubmenu.value = openSubmenu.value === key ? null : key
-}
-
-const isAnySubmenuRouteActive = computed(() => {
-  return menuGroups.value.some((group) =>
-    group.items.some(
-      (item) => item.subItems && item.subItems.some((subItem) => isActive(subItem.path)),
-    ),
-  )
-})
-
-const isSubmenuOpen = (groupIndex, itemIndex) => {
-  const key = `${groupIndex}-${itemIndex}`
-  return (
-    openSubmenu.value === key ||
-    (isAnySubmenuRouteActive.value &&
-      menuGroups.value[groupIndex].items[itemIndex].subItems?.some((subItem) =>
-        isActive(subItem.path),
-      ))
-  )
-}
-
-const startTransition = (el) => {
-  el.style.height = 'auto'
-  const height = el.scrollHeight
-  el.style.height = '0px'
-  el.offsetHeight // force reflow
-  el.style.height = height + 'px'
-}
-
-const endTransition = (el) => {
-  el.style.height = ''
-}
+const isActive = (path: string) => route.path === path
 </script>

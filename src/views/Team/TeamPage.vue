@@ -257,7 +257,9 @@ const stats = computed(() => {
   const invited = members.value.filter((member) => member.status === 'invited').length
   const capacity = members.value.reduce((sum, member) => sum + member.capacityHours, 0)
   const assigned = sprintIssues.value.reduce((sum, issue) => sum + issue.estimateHours, 0)
-  const unassigned = issues.filter((issue) => issue.assigneeId === null && issue.status !== 'done')
+  const unassigned = issues.value.filter(
+    (issue) => issue.assigneeId === null && issue.status !== 'done',
+  )
 
   return [
     {
@@ -301,7 +303,7 @@ const edit = (member: MemberProfile) => {
 
 const remove = (id: string) => {
   removeMember(id)
-  issues.forEach((issue) => {
+  issues.value.forEach((issue) => {
     if (issue.assigneeId === id) issue.assigneeId = null
   })
   confirmRemove.value = null

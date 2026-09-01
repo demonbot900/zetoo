@@ -9,6 +9,7 @@ export type MessageKey = keyof typeof en
 
 const en = {
   'nav.dashboard': 'Dashboard',
+  'nav.boards': 'Boards',
   'nav.board': 'Board',
   'nav.backlog': 'Backlog',
   'nav.timeline': 'Timeline',
@@ -19,8 +20,16 @@ const en = {
   'nav.profile': 'My profile',
   'nav.appearance': 'Appearance',
   'nav.company': 'Company',
+  'nav.import': 'Migration',
+  'nav.projects': 'Projects',
+  'nav.time': 'Time tracking',
+  // Kept in German across catalogues: it names a specific German invoicing
+  // document, and customers refer to it by that word.
+  'nav.records': 'Leistungsnachweis',
+  'nav.alerts': 'Deadlines',
   'group.planning': 'Planning',
   'group.work': 'Work',
+  'group.records': 'Billing',
   'group.workspace': 'Workspace',
   'action.save': 'Save',
   'action.cancel': 'Cancel',
@@ -50,6 +59,7 @@ const en = {
 
 const de: Partial<typeof en> = {
   'nav.dashboard': 'Übersicht',
+  'nav.boards': 'Boards',
   'nav.board': 'Board',
   'nav.backlog': 'Backlog',
   'nav.timeline': 'Zeitachse',
@@ -60,8 +70,14 @@ const de: Partial<typeof en> = {
   'nav.profile': 'Mein Profil',
   'nav.appearance': 'Darstellung',
   'nav.company': 'Unternehmen',
+  'nav.import': 'Migration',
+  'nav.projects': 'Projekte',
+  'nav.time': 'Zeiterfassung',
+  'nav.records': 'Leistungsnachweis',
+  'nav.alerts': 'Fristen',
   'group.planning': 'Planung',
   'group.work': 'Arbeit',
+  'group.records': 'Abrechnung',
   'group.workspace': 'Arbeitsbereich',
   'action.save': 'Speichern',
   'action.cancel': 'Abbrechen',

@@ -166,17 +166,24 @@
               <input
                 v-model.number="hoursToLog"
                 type="number"
-                min="0.5"
-                step="0.5"
+                min="0"
+                step="0.25"
                 class="zt-input"
                 @keyup.enter="submitTime"
               />
             </label>
-            <button type="button" class="zt-btn-primary" @click="submitTime">Log time</button>
-          </div>
-          <div class="mt-3 flex flex-wrap gap-2">
             <button
-              v-for="preset in [0.5, 1, 2, 4, 8]"
+              type="button"
+              class="zt-btn-primary"
+              :disabled="hoursToLog <= 0"
+              @click="submitTime"
+            >
+              Log time
+            </button>
+          </div>
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              v-for="preset in [0.25, 0.5, 1, 2, 4, 8]"
               :key="preset"
               type="button"
               class="zt-chip transition-colors hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15"
@@ -184,7 +191,19 @@
             >
               +{{ preset }}h
             </button>
+            <button
+              v-if="hoursToLog > 0"
+              type="button"
+              class="text-theme-xs font-medium text-gray-500 hover:text-error-500"
+              @click="hoursToLog = 0"
+            >
+              Zurücksetzen
+            </button>
           </div>
+          <p class="mt-2 text-theme-xs text-gray-500 dark:text-gray-400">
+            Die Schnellwahl addiert auf das Feld. Gebucht wird erst mit „Log time" — als ein
+            Eintrag im Leistungsnachweis.
+          </p>
         </section>
       </div>
 
@@ -364,7 +383,7 @@ const {
 } = usePlanner()
 
 const issue = selectedIssue
-const hoursToLog = ref<number>(1)
+const hoursToLog = ref<number>(0)
 const checklistDraft = ref('')
 const labelDraft = ref('')
 const activeTab = ref('details')
@@ -374,7 +393,7 @@ watch(
   () => issue.value?.id,
   () => {
     activeTab.value = 'details'
-    hoursToLog.value = 1
+    hoursToLog.value = 0
     checklistDraft.value = ''
     labelDraft.value = ''
   },
@@ -431,12 +450,12 @@ const assigneeOptions = computed(() => [
 
 const sprintOptions = computed(() => [
   { value: null, label: 'Backlog' },
-  ...sprints.map((sprint) => ({ value: sprint.id, label: sprint.name })),
+  ...sprints.value.map((sprint) => ({ value: sprint.id, label: sprint.name })),
 ])
 
 const epicOptions = computed(() => [
   { value: null, label: 'None' },
-  ...epics.map((epic) => ({ value: epic.id, label: epic.name })),
+  ...epics.value.map((epic) => ({ value: epic.id, label: epic.name })),
 ])
 
 const checklistDone = computed(() => issue.value?.checklist.filter((item) => item.done).length ?? 0)
@@ -501,14 +520,18 @@ const onStatusChange = () => {
 }
 
 const submitTime = () => {
-  if (!issue.value) return
+  if (!issue.value || hoursToLog.value <= 0) return
   logTime(issue.value.id, hoursToLog.value)
-  hoursToLog.value = 1
+  hoursToLog.value = 0
 }
 
+/**
+ * Quick buttons add to the pending amount instead of booking on the spot.
+ * Clicking +1h three times has to end up as one three-hour line on the
+ * Leistungsnachweis, not three.
+ */
 const logPreset = (hours: number) => {
-  if (!issue.value) return
-  logTime(issue.value.id, hours)
+  hoursToLog.value = Math.round((hoursToLog.value + hours) * 100) / 100
 }
 
 const remove = () => {

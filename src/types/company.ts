@@ -78,6 +78,5 @@ export interface RegistrationDraft {
   }
   invites: Invite[]
   boardTemplate: string
-  seedSampleData: boolean
   acceptedTerms: boolean
 }

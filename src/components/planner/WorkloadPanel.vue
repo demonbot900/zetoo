@@ -9,7 +9,7 @@
           Assigned hours against sprint capacity.
         </p>
       </div>
-      <span class="text-theme-xs text-gray-500 dark:text-gray-400">{{ activeSprint.name }}</span>
+      <span class="text-theme-xs text-gray-500 dark:text-gray-400">{{ activeSprint?.name ?? "—" }}</span>
     </div>
 
     <ul class="mt-5 flex flex-col gap-4">

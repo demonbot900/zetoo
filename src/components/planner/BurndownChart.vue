@@ -6,7 +6,7 @@
       <div>
         <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">Sprint burndown</h3>
         <p class="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">
-          Remaining hours against the ideal line for {{ activeSprint.name }}.
+          Remaining hours against the ideal line for {{ activeSprint?.name ?? "the sprint" }}.
         </p>
       </div>
       <span

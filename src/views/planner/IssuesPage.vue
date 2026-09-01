@@ -167,7 +167,7 @@ const assigneeOptions = computed(() => [
 const sprintOptions = computed(() => [
   { value: 'all', label: 'All sprints' },
   { value: 'backlog', label: 'Backlog' },
-  ...sprints.map((item) => ({ value: item.id, label: item.name })),
+  ...sprints.value.map((item) => ({ value: item.id, label: item.name })),
 ])
 
 const columns = [
@@ -201,7 +201,7 @@ const statusChip = (value: IssueStatus) =>
   })[value]
 
 const filtered = computed(() =>
-  issues.filter((issue) => {
+  issues.value.filter((issue) => {
     const term = search.value.trim().toLowerCase()
     const matchesSearch = term === '' || `${issue.id} ${issue.title}`.toLowerCase().includes(term)
     const matchesStatus = status.value === 'all' || issue.status === status.value

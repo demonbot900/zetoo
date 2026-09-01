@@ -2,11 +2,6 @@
 // Windows and cannot be sized. https://flagicons.lipis.dev/
 import 'flag-icons/css/flag-icons.min.css'
 import './assets/main.css'
-// Import Swiper styles
-import 'swiper/css'
-import 'swiper/css/navigation'
-import 'swiper/css/pagination'
-import 'jsvectormap/dist/jsvectormap.css'
 import 'flatpickr/dist/flatpickr.css'
 
 import { createApp } from 'vue'

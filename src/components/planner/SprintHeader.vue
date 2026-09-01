@@ -4,9 +4,30 @@
   >
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
+        <!-- Board switcher: which client engagement this sprint belongs to. -->
+        <div v-if="activeBoards.length > 1" class="mb-3 w-56">
+          <ZSelect
+            :model-value="activeBoardId"
+            :options="boardOptions"
+            aria-label="Board"
+            size="sm"
+            block
+            @update:model-value="(id) => switchBoard(String(id))"
+          />
+        </div>
+        <div v-else-if="activeBoard" class="mb-2 flex items-center gap-2">
+          <span
+            class="h-2.5 w-2.5 rounded-full"
+            :style="{ backgroundColor: activeBoard.color || '#98a2b3' }"
+          ></span>
+          <span class="text-theme-xs text-gray-500 dark:text-gray-400">
+            {{ activeBoard.name }}
+          </span>
+        </div>
+
         <div class="flex items-center gap-2.5">
           <h2 class="text-lg font-semibold text-gray-800 dark:text-white/90">
-            {{ activeSprint.name }}
+            {{ activeSprint?.name ?? "Kein Sprint" }}
           </h2>
           <span
             class="rounded-full bg-brand-50 px-2.5 py-0.5 text-theme-xs font-medium text-brand-500 dark:bg-brand-500/15 dark:text-brand-400"
@@ -14,10 +35,14 @@
             Active
           </span>
         </div>
-        <p class="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">{{ activeSprint.goal }}</p>
+        <p class="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">
+          {{ activeSprint?.goal || "Noch kein Sprintziel gesetzt." }}
+        </p>
         <p class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
-          {{ formatDate(activeSprint.startDate) }} – {{ formatDate(activeSprint.endDate) }} ·
-          {{ sprintDays.remaining }} of {{ sprintDays.total }} days left
+          <template v-if="activeSprint">
+            {{ formatDate(activeSprint.startDate) }} – {{ formatDate(activeSprint.endDate) }} ·
+            {{ sprintDays.remaining }} of {{ sprintDays.total }} days left
+          </template>
         </p>
       </div>
 
@@ -57,10 +82,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { formatDate, usePlanner } from '@/composables/usePlanner'
+import ZSelect from '@/components/ui/ZSelect.vue'
 
 defineEmits<{ create: [] }>()
 
-const { activeSprint, sprintTotals, sprintDays } = usePlanner()
+const { activeSprint, sprintTotals, sprintDays, activeBoard, activeBoards, activeBoardId, switchBoard } =
+  usePlanner()
+
+const boardOptions = computed(() =>
+  activeBoards.value.map((board) => ({
+    value: board.id,
+    label: board.name,
+    hint: board.client,
+    color: board.color,
+  })),
+)
 
 const percentDone = computed(() =>
   sprintTotals.value.issues === 0

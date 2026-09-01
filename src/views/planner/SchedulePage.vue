@@ -42,10 +42,11 @@ import timeGridPlugin from '@fullcalendar/timegrid'
 import listPlugin from '@fullcalendar/list'
 import interactionPlugin from '@fullcalendar/interaction'
 import type { CalendarOptions, EventClickArg, EventDropArg } from '@fullcalendar/core'
+import type { EventResizeDoneArg } from '@fullcalendar/interaction'
 import AdminLayout from '@/components/layout/AdminLayout.vue'
 import PageBreadcrumb from '@/components/common/PageBreadcrumb.vue'
 import IssueDetailPanel from '@/components/planner/IssueDetailPanel.vue'
-import { today, toISODate, usePlanner } from '@/composables/usePlanner'
+import { addDays, daysBetween, today, toISODate, usePlanner } from '@/composables/usePlanner'
 import type { Issue } from '@/types/planner'
 
 const { issues, memberById, selectIssue, updateIssue } = usePlanner()
@@ -65,14 +66,15 @@ const colorFor = (issue: Issue) => {
 }
 
 const events = computed(() =>
-  issues
+  issues.value
     .filter((issue) => issue.dueDate !== null)
     .map((issue) => ({
       id: issue.id,
       title: `${issue.id} · ${issue.title}`,
       start: issue.startDate ?? issue.dueDate!,
-      // FullCalendar treats all-day end dates as exclusive.
-      end: nextDay(issue.dueDate!),
+      // FullCalendar treats an all-day end as exclusive, so a task due on the
+      // 15th has to end on the 16th to fill the 15th.
+      end: addDays(issue.dueDate!, 1),
       allDay: true,
       backgroundColor: colorFor(issue),
       borderColor: colorFor(issue),
@@ -83,38 +85,54 @@ const events = computed(() =>
     })),
 )
 
-function nextDay(date: string): string {
-  const parsed = new Date(`${date}T00:00:00`)
-  parsed.setDate(parsed.getDate() + 1)
-  return toISODate(parsed)
-}
-
 const onEventClick = (info: EventClickArg) => {
   selectIssue(info.event.id)
 }
 
+/** Moving a bar keeps its length and shifts both ends. */
 const onEventDrop = (info: EventDropArg) => {
-  const issue = issues.find((item) => item.id === info.event.id)
-  if (!issue || !info.event.start) return
+  const issue = issues.value.find((item) => item.id === info.event.id)
+  if (!issue || !info.event.start) {
+    info.revert()
+    return
+  }
 
-  const newStart = toISODate(info.event.start)
-  const span = issue.startDate && issue.dueDate ? daysApart(issue.startDate, issue.dueDate) : 0
+  const start = toISODate(info.event.start)
+  const span = issue.startDate && issue.dueDate ? daysBetween(issue.startDate, issue.dueDate) : 0
+
   updateIssue(issue.id, {
-    startDate: newStart,
-    dueDate: shift(newStart, span),
+    // An issue that only ever had a deadline keeps it that way; dragging it
+    // should move the deadline, not silently give it a start date.
+    startDate: issue.startDate === null ? null : start,
+    dueDate: addDays(start, span),
   })
 }
 
-function daysApart(from: string, to: string): number {
-  return Math.round(
-    (new Date(`${to}T00:00:00`).getTime() - new Date(`${from}T00:00:00`).getTime()) / 86400000,
-  )
-}
+/**
+ * Resizing changes only the edge that was dragged. Without this handler
+ * FullCalendar animates the resize and then snaps back, which reads as the
+ * calendar ignoring the drag.
+ */
+const onEventResize = (info: EventResizeDoneArg) => {
+  const issue = issues.value.find((item) => item.id === info.event.id)
+  if (!issue || !info.event.start || !info.event.end) {
+    info.revert()
+    return
+  }
 
-function shift(date: string, days: number): string {
-  const parsed = new Date(`${date}T00:00:00`)
-  parsed.setDate(parsed.getDate() + days)
-  return toISODate(parsed)
+  const start = toISODate(info.event.start)
+  // `end` is exclusive, so the last covered day is the day before it.
+  const due = addDays(toISODate(info.event.end), -1)
+
+  if (due < start) {
+    info.revert()
+    return
+  }
+
+  updateIssue(issue.id, {
+    startDate: issue.startDate === null && start === due ? null : start,
+    dueDate: due,
+  })
 }
 
 const calendarOptions = computed<CalendarOptions>(() => ({
@@ -127,9 +145,17 @@ const calendarOptions = computed<CalendarOptions>(() => ({
   },
   height: 'auto',
   editable: true,
+  // Issues are whole-day items; dropping one into a time slot would silently
+  // turn it into a timed event the rest of the app cannot represent.
+  droppable: false,
+  allDayMaintainDuration: true,
   dayMaxEvents: 4,
+  // Without an explicit locale FullCalendar starts the week on Sunday, which
+  // does not match the German dates shown everywhere else.
+  firstDay: 1,
   events: events.value,
   eventClick: onEventClick,
   eventDrop: onEventDrop,
+  eventResize: onEventResize,
 }))
 </script>

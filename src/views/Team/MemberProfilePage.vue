@@ -91,7 +91,7 @@
               This sprint
             </h4>
             <span class="text-theme-xs text-gray-500 dark:text-gray-400">
-              {{ activeSprint.name }}
+              {{ activeSprint?.name ?? "Kein Sprint" }}
             </span>
           </div>
 

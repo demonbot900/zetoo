@@ -32,7 +32,7 @@ const confirmPassword = ref('')
 
 export function useRegistration() {
   const { registerCompany } = useWorkspace()
-  const { applyBoardTemplate } = usePlanner()
+  const { applyBoardTemplate, createBoard } = usePlanner()
 
   const errors = computed<Record<string, string>>(() => {
     const found: Record<string, string> = {}
@@ -123,15 +123,14 @@ export function useRegistration() {
     submitted.value = false
   }
 
-  /** Creates the workspace and lays out the first board. */
+  /** Creates the workspace, lays out the first board and opens a sprint. */
   const submit = (): boolean => {
     if (!canContinue.value) return false
-    const { members } = useWorkspace()
     registerCompany(draft)
-    applyBoardTemplate(draft.boardTemplate, {
-      keepIssues: draft.seedSampleData,
-      reassignTo: members.value.map((member) => member.id),
-    })
+    // Boards come first: columns, sprints and issues all hang off one, and
+    // `createBoard` already opens the board's first sprint.
+    createBoard({ name: draft.company.name || 'Erstes Board', client: draft.company.name })
+    applyBoardTemplate(draft.boardTemplate, { keepIssues: false })
     submitted.value = true
     return true
   }

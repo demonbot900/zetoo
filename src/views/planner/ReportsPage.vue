@@ -81,15 +81,15 @@ import { usePlanner } from '@/composables/usePlanner'
 const { issues, epics } = usePlanner()
 
 const accuracy = computed(() => {
-  const done = issues.filter((issue) => issue.status === 'done')
+  const done = issues.value.filter((issue) => issue.status === 'done')
   const estimated = done.reduce((sum, issue) => sum + issue.estimateHours, 0)
   const logged = done.reduce((sum, issue) => sum + issue.loggedHours, 0)
   return estimated === 0 ? 0 : Math.round((logged / estimated) * 100)
 })
 
 const epicBreakdown = computed(() =>
-  epics.map((epic) => {
-    const list = issues.filter((issue) => issue.epicId === epic.id)
+  epics.value.map((epic) => {
+    const list = issues.value.filter((issue) => issue.epicId === epic.id)
     const done = list.filter((issue) => issue.status === 'done').length
     return {
       id: epic.id,

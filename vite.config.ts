@@ -32,5 +32,14 @@ export default defineConfig({
     ],
     // Option 2: Allow all hosts (less secure)
     // allowedHosts: 'all',
+
+    // The API runs as a separate process; proxying keeps the browser on one
+    // origin so no CORS handling is needed.
+    proxy: {
+      '/api': {
+        target: `http://localhost:${process.env.PORT ?? 3001}`,
+        changeOrigin: true,
+      },
+    },
   },
 })
