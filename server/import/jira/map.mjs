@@ -99,6 +99,17 @@ export const findStoryPointField = (fields = []) => {
   return match?.id ?? null
 }
 
+/**
+ * The start-date field, found by name.
+ *
+ * Its id varies per site and it is localised — "Start date", "Startdatum" —
+ * so both the English and the German label are matched rather than betting on
+ * customfield_10015 being right everywhere.
+ */
+export const findStartDateField = (fields = []) =>
+  fields.find((field) => /^(start date|startdatum|start)$/i.test(String(field.name ?? '').trim()))
+    ?.id ?? null
+
 export const findSprintField = (fields = []) =>
   fields.find((field) => String(field.name ?? '').toLowerCase() === 'sprint')?.id ?? null
 
@@ -134,6 +145,9 @@ export const mapStatusesToColumns = (statuses = []) => {
         name: status.name,
         color: CATEGORY_COLOR[key] ?? '#98a2b3',
         rank: CATEGORY_RANK[key] ?? 1,
+        // Jira already knows which statuses finish work; carrying that over is
+        // what lets progress be counted on a board with translated columns.
+        isDone: key === 'done',
         wipLimit: null,
       })
     }
@@ -189,6 +203,7 @@ export const mapUser = (user) => ({
 export const mapIssue = (issue, context = {}) => {
   const {
     storyPointField,
+    startDateField,
     statusToColumn = {},
     accountToMember = {},
     sprintByExternalId = {},
@@ -217,7 +232,9 @@ export const mapIssue = (issue, context = {}) => {
     estimateHours: secondsToHours(fields.timeoriginalestimate ?? fields.timeestimate),
     loggedHours: secondsToHours(fields.timespent),
     storyPoints: storyPointField ? (Number(fields[storyPointField]) || 0) : 0,
-    startDate: toISODate(fields.customfield_10015 ?? fields.startDate),
+    startDate: toISODate(
+      (startDateField ? fields[startDateField] : null) ?? fields.startDate ?? null,
+    ),
     dueDate: toISODate(fields.duedate),
     completedAt: toISODate(fields.resolutiondate),
     labels: Array.isArray(fields.labels) ? fields.labels : [],

@@ -1,6 +1,7 @@
 import express from 'express'
 import cookieParser from 'cookie-parser'
 import {
+  db,
   DB_PATH,
   readBoard,
   readRecords,
@@ -14,11 +15,15 @@ import {
 } from './db.mjs'
 import {
   companyForRequest,
+  memberByEmail,
+  sessionEmail,
   isConfigured as isGoogleConfigured,
   pruneSessions,
   registerAuthRoutes,
 } from './auth.mjs'
 import { registerImportRoutes } from './import/routes.mjs'
+import { leaderboard } from './gamification.mjs'
+import { readSettings, remind, runDueReminders, startScheduler, writeSettings } from './reminders.mjs'
 
 /**
  * Zetoo API.
@@ -102,6 +107,79 @@ app.post('/api/reset', (req, res) => {
 
 registerImportRoutes(app, withCompany)
 
+/* ------------------------------------------------------------------ *
+ * Notifications and gamification
+ * ------------------------------------------------------------------ */
+
+/** The signed-in member, or null. Notification settings are per person. */
+const withMember = (req, res) => {
+  const companyId = withCompany(req, res)
+  if (!companyId) return null
+  const email = sessionEmail(req)
+  const member = email ? memberByEmail(email) : null
+  if (!member) {
+    res.status(401).json({ error: 'Keine Person hinter dieser Sitzung.' })
+    return null
+  }
+  return { companyId, member }
+}
+
+app.get('/api/me/notifications', (req, res) => {
+  const ctx = withMember(req, res)
+  if (!ctx) return
+  res.json({
+    settings: readSettings(ctx.member.email),
+    // Chat webhooks only exist in Google Workspace; say so rather than let
+    // someone hunt for a menu entry a personal account does not have.
+    chatAvailable: true,
+    recent: db
+      .prepare(
+        'SELECT id, title, body, channel, created_at AS createdAt, read_at AS readAt FROM notifications WHERE lower(email) = lower(?) ORDER BY created_at DESC LIMIT 20',
+      )
+      .all(ctx.member.email),
+  })
+})
+
+app.put('/api/me/notifications', (req, res) => {
+  const ctx = withMember(req, res)
+  if (!ctx) return
+  try {
+    res.json({ settings: writeSettings(ctx.companyId, ctx.member.email, req.body ?? {}) })
+  } catch (error) {
+    res.status(400).json({ error: error.message })
+  }
+})
+
+/** Sends the nudge straight away, so a webhook can be proven before 17:00. */
+app.post('/api/me/notifications/test', async (req, res) => {
+  const ctx = withMember(req, res)
+  if (!ctx) return
+  try {
+    const today = new Date().toISOString().slice(0, 10)
+    const result = await remind(ctx.companyId, ctx.member, today, {})
+    // A test must not consume today's real reminder.
+    db.prepare("UPDATE member_settings SET last_reminded_on = '' WHERE lower(email) = lower(?)").run(
+      ctx.member.email,
+    )
+    res.json(result)
+  } catch (error) {
+    res.status(400).json({ error: error.message })
+  }
+})
+
+app.get('/api/leaderboard', (req, res) => {
+  const companyId = withCompany(req, res)
+  if (!companyId) return
+  res.json({ rows: leaderboard(companyId, { days: Number(req.query.days) || 90 }) })
+})
+
+/** Lets an operator fire the due-reminder sweep without waiting for the tick. */
+app.post('/api/reminders/run', async (req, res) => {
+  const companyId = withCompany(req, res)
+  if (!companyId) return
+  res.json({ sent: await runDueReminders({}) })
+})
+
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -121,6 +199,7 @@ app.use((error, _req, res, _next) => {
 
 app.listen(PORT, () => {
   const pruned = pruneSessions()
+  startScheduler()
   console.log(`Zetoo API auf http://localhost:${PORT}`)
   console.log(`Datenbank: ${DB_PATH}`)
   if (pruned) console.log(`${pruned} abgelaufene Sitzung(en) entfernt`)

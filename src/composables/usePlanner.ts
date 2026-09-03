@@ -152,7 +152,16 @@ export const columnIdFrom = (name: string, taken: string[] = []): string => {
 }
 
 const defaultColumns = (boardId = ''): StatusColumn[] => [
-  { id: 'todo', boardId, name: 'To Do', color: '#98a2b3', wipLimit: null, order: 0, collapsed: false },
+  {
+    id: 'todo',
+    boardId,
+    name: 'To Do',
+    color: '#98a2b3',
+    wipLimit: null,
+    order: 0,
+    collapsed: false,
+    isDone: false,
+  },
   {
     id: 'in_progress',
     boardId,
@@ -161,9 +170,28 @@ const defaultColumns = (boardId = ''): StatusColumn[] => [
     wipLimit: 5,
     order: 1,
     collapsed: false,
+    isDone: false,
   },
-  { id: 'review', boardId, name: 'In Review', color: '#f79009', wipLimit: 3, order: 2, collapsed: false },
-  { id: 'done', boardId, name: 'Done', color: '#12b76a', wipLimit: null, order: 3, collapsed: false },
+  {
+    id: 'review',
+    boardId,
+    name: 'In Review',
+    color: '#f79009',
+    wipLimit: 3,
+    order: 2,
+    collapsed: false,
+    isDone: false,
+  },
+  {
+    id: 'done',
+    boardId,
+    name: 'Done',
+    color: '#12b76a',
+    wipLimit: null,
+    order: 3,
+    collapsed: false,
+    isDone: true,
+  },
 ]
 
 /* ------------------------------------------------------------------ *
@@ -282,8 +310,11 @@ interface BoardSnapshot {
 
 /** The active board's live columns plus every parked board's set. */
 const allColumns = (): StatusColumn[] => {
+  const live = new Set(boards.map((board) => board.id))
   const parked = [...columnsByBoard.entries()]
-    .filter(([boardId]) => boardId !== activeBoardId.value)
+    // A deleted board leaves its columns behind in the map; writing them back
+    // would keep resurrecting rows that point at nothing.
+    .filter(([boardId]) => boardId !== activeBoardId.value && live.has(boardId))
     .flatMap(([, columns]) => columns)
   return [...parked, ...statusColumns.map((column) => ({ ...column }))]
 }
@@ -291,9 +322,18 @@ const allColumns = (): StatusColumn[] => {
 let isRestoringBoard = true
 /** Set once the user edits, so a slow server response cannot overwrite them. */
 let isBoardDirty = false
+/**
+ * Nothing is written before the database has answered.
+ *
+ * A save is a whole-document replace, so a store that has not hydrated yet
+ * would push its empty state over the top and delete every row. That is not
+ * hypothetical: it is how a freshly opened tab wiped boards it had never
+ * loaded.
+ */
+let hasHydratedBoard = false
 
 const saveBoard = () => {
-  if (isRestoringBoard) return
+  if (isRestoringBoard || !hasHydratedBoard) return
   isBoardDirty = true
   syncSave('board', BOARD_STORAGE_KEY, {
     boards: boards.map((board) => ({ ...board })),
@@ -381,10 +421,12 @@ void syncLoad<BoardSnapshot>(
   (value) => !value.boards?.length && !value.issues?.length,
 ).then(
   (remote) => {
-    if (!remote || isBoardDirty) return
-    isRestoringBoard = true
-    applyBoard(remote)
-    isRestoringBoard = false
+    if (remote && !isBoardDirty) {
+      isRestoringBoard = true
+      applyBoard(remote)
+      isRestoringBoard = false
+    }
+    hasHydratedBoard = true
   },
 )
 
@@ -394,6 +436,19 @@ void syncLoad<BoardSnapshot>(
 
 export function usePlanner() {
   /* ---------------- Boards ---------------- */
+
+  /**
+   * Column ids that finish work on the open board.
+   *
+   * Everything that counts progress goes through this rather than comparing
+   * against a literal `done`, which silently reports 0% on any board whose
+   * last column was renamed or came from a translated Jira workflow.
+   */
+  const doneColumnIds = computed(
+    () => new Set(statusColumns.filter((column) => column.isDone).map((column) => column.id)),
+  )
+
+  const isDoneStatus = (status: IssueStatus) => doneColumnIds.value.has(status)
 
   const activeBoards = computed(() => boards.filter((board) => !board.archived))
 
@@ -502,7 +557,15 @@ export function usePlanner() {
   const boardSummaries = computed(() =>
     boards.map((board) => {
       const own = issues.filter((issue) => issue.boardId === board.id)
-      const done = own.filter((issue) => issue.status === 'done')
+      const finished = new Set(
+        (board.id === activeBoard.value?.id
+          ? statusColumns
+          : (columnsByBoard.get(board.id) ?? [])
+        )
+          .filter((column) => column.isDone)
+          .map((column) => column.id),
+      )
+      const done = own.filter((issue) => finished.has(issue.status))
       const sprint =
         sprints.find((item) => item.boardId === board.id && item.state === 'active') ?? null
       return {
@@ -514,7 +577,7 @@ export function usePlanner() {
         estimate: own.reduce((sum, issue) => sum + issue.estimateHours, 0),
         logged: own.reduce((sum, issue) => sum + issue.loggedHours, 0),
         overdue: own.filter(
-          (issue) => issue.status !== 'done' && issue.dueDate !== null && issue.dueDate < today,
+          (issue) => !finished.has(issue.status) && issue.dueDate !== null && issue.dueDate < today,
         ).length,
       }
     }),
@@ -630,6 +693,7 @@ export function usePlanner() {
       name: name.trim() || 'New column',
       color,
       wipLimit: null,
+      isDone: false,
       order: statusColumns.length,
       collapsed: false,
     }
@@ -725,6 +789,8 @@ export function usePlanner() {
         color: column.color,
         wipLimit: column.wipLimit,
         order: index,
+        // Templates end on their finished column, so the last one closes work.
+        isDone: index === template.columns.length - 1,
         collapsed: false,
       }
     })
@@ -870,9 +936,9 @@ export function usePlanner() {
     const list = sprintIssues.value
     const estimate = list.reduce((sum, issue) => sum + issue.estimateHours, 0)
     const logged = list.reduce((sum, issue) => sum + issue.loggedHours, 0)
-    const done = list.filter((issue) => issue.status === 'done')
+    const done = list.filter((issue) => isDoneStatus(issue.status))
     const remaining = list
-      .filter((issue) => issue.status !== 'done')
+      .filter((issue) => !isDoneStatus(issue.status))
       .reduce((sum, issue) => sum + issue.estimateHours, 0)
 
     return {
@@ -939,7 +1005,7 @@ export function usePlanner() {
       ),
       completed: closed.map((sprint) =>
         issues
-          .filter((issue) => issue.sprintId === sprint.id && issue.status === 'done')
+          .filter((issue) => issue.sprintId === sprint.id && isDoneStatus(issue.status))
           .reduce((sum, issue) => sum + issue.storyPoints, 0),
       ),
     }
@@ -962,14 +1028,14 @@ export function usePlanner() {
 
   const upcomingDeadlines = computed(() =>
     boardIssues.value
-      .filter((issue) => issue.status !== 'done' && issue.dueDate !== null)
+      .filter((issue) => !isDoneStatus(issue.status) && issue.dueDate !== null)
       .sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : 1))
       .slice(0, 6),
   )
 
   const overdueIssues = computed(() =>
     boardIssues.value.filter(
-      (issue) => issue.status !== 'done' && issue.dueDate !== null && issue.dueDate < today,
+      (issue) => !isDoneStatus(issue.status) && issue.dueDate !== null && issue.dueDate < today,
     ),
   )
 
@@ -1000,6 +1066,7 @@ export function usePlanner() {
     selectedIssue,
     selectIssue,
     // lookups
+    isDoneStatus,
     memberById,
     epicById,
     sprintById,

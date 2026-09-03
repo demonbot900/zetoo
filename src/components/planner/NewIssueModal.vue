@@ -46,11 +46,23 @@
         </div>
         <div>
           <label for="new-issue-start" class="zt-label">Start date</label>
-          <input id="new-issue-start" v-model="form.startDate" type="date" class="zt-input" />
+          <flat-pickr
+            id="new-issue-start"
+            v-model="form.startDate"
+            :config="dateConfig"
+            class="zt-input"
+            placeholder="Datum wählen"
+          />
         </div>
         <div>
           <label for="new-issue-due" class="zt-label">Due date</label>
-          <input id="new-issue-due" v-model="form.dueDate" type="date" class="zt-input" />
+          <flat-pickr
+            id="new-issue-due"
+            v-model="form.dueDate"
+            :config="dateConfig"
+            class="zt-input"
+            placeholder="Datum wählen"
+          />
         </div>
       </div>
 
@@ -73,6 +85,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import ZModal from '@/components/ui/ZModal.vue'
 import ZSelect from '@/components/ui/ZSelect.vue'
+import flatPickr from 'vue-flatpickr-component'
 import { addDays, priorityLabels, today, typeLabels, usePlanner } from '@/composables/usePlanner'
 import type { IssuePriority, IssueType } from '@/types/planner'
 
@@ -80,6 +93,15 @@ const props = defineProps<{ open: boolean; defaultSprintId?: string | null }>()
 const emit = defineEmits<{ close: []; created: [id: string] }>()
 
 const { team, sprints, createIssue, activeSprint, columns } = usePlanner()
+
+/** Same picker as the issue panel, so both screens read alike. */
+const dateConfig = {
+  dateFormat: 'Y-m-d',
+  altInput: true,
+  altFormat: 'd.m.Y',
+  allowInput: true,
+  locale: { firstDayOfWeek: 1 },
+}
 
 const titleInput = ref<HTMLInputElement | null>(null)
 const error = ref('')

@@ -27,6 +27,8 @@ const en = {
   // document, and customers refer to it by that word.
   'nav.records': 'Leistungsnachweis',
   'nav.alerts': 'Deadlines',
+  'nav.leaderboard': 'Leaderboard',
+  'nav.notifications': 'Notifications',
   'group.planning': 'Planning',
   'group.work': 'Work',
   'group.records': 'Billing',
@@ -75,6 +77,8 @@ const de: Partial<typeof en> = {
   'nav.time': 'Zeiterfassung',
   'nav.records': 'Leistungsnachweis',
   'nav.alerts': 'Fristen',
+  'nav.leaderboard': 'Rangliste',
+  'nav.notifications': 'Benachrichtigungen',
   'group.planning': 'Planung',
   'group.work': 'Arbeit',
   'group.records': 'Abrechnung',

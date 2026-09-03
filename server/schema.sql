@@ -83,6 +83,10 @@ CREATE TABLE IF NOT EXISTS status_columns (
   position  INTEGER NOT NULL DEFAULT 0,
   collapsed INTEGER NOT NULL DEFAULT 0,
   dot       TEXT,
+  -- Which columns count as finished. Boards rename and translate their last
+  -- column ("Erledigt", "Shipped", "Approved"), so progress cannot be read off
+  -- a hard-coded id.
+  is_done   INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (board_id, id)
 );
 
@@ -252,3 +256,39 @@ CREATE TABLE IF NOT EXISTS imports (
 );
 
 CREATE INDEX IF NOT EXISTS idx_imports_company ON imports (company_id, started_at);
+
+-- Per-person notification settings.
+--
+-- Keyed on the email address, not members.id: a workspace save replaces the
+-- members table wholesale, and settings must not travel with it.
+CREATE TABLE IF NOT EXISTS member_settings (
+  email             TEXT PRIMARY KEY,
+  company_id        TEXT NOT NULL DEFAULT '',
+  -- Google Chat incoming webhook. A Workspace feature; personal Gmail
+  -- accounts cannot create one, hence the in-app fallback.
+  chat_webhook      TEXT NOT NULL DEFAULT '',
+  reminder_enabled  INTEGER NOT NULL DEFAULT 0,
+  -- Local time of day the nudge goes out, HH:MM.
+  reminder_time     TEXT NOT NULL DEFAULT '17:00',
+  -- ISO weekdays the person is expected to book, 1 = Monday.
+  reminder_days     TEXT NOT NULL DEFAULT '[1,2,3,4,5]',
+  last_reminded_on  TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_member_settings_company ON member_settings (company_id);
+
+-- Nudges already delivered, so a restart cannot send the same one twice and
+-- the in-app inbox has something to show.
+CREATE TABLE IF NOT EXISTS notifications (
+  id         TEXT PRIMARY KEY,
+  company_id TEXT NOT NULL,
+  email      TEXT NOT NULL,
+  kind       TEXT NOT NULL DEFAULT 'reminder',
+  title      TEXT NOT NULL DEFAULT '',
+  body       TEXT NOT NULL DEFAULT '',
+  channel    TEXT NOT NULL DEFAULT 'app',
+  created_at TEXT NOT NULL,
+  read_at    TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_email ON notifications (email, created_at);

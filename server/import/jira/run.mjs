@@ -3,6 +3,7 @@ import { bumpGeneration, db } from '../../db.mjs'
 import { createClient } from './client.mjs'
 import {
   findSprintField,
+  findStartDateField,
   findStoryPointField,
   mapIssue,
   mapProjectToBoard,
@@ -128,10 +129,19 @@ const upsertColumns = (companyId, boardId, columns) => {
   const map = {}
   for (const column of columns) {
     db.prepare(
-      `INSERT INTO status_columns (id, company_id, board_id, name, color, wip_limit, position, collapsed, dot)
-       VALUES (?, ?, ?, ?, ?, NULL, ?, 0, NULL)
-       ON CONFLICT(board_id, id) DO UPDATE SET name = excluded.name, position = excluded.position`,
-    ).run(column.id, companyId, boardId, column.name, column.color, column.order)
+      `INSERT INTO status_columns (id, company_id, board_id, name, color, wip_limit, position, collapsed, dot, is_done)
+       VALUES (?, ?, ?, ?, ?, NULL, ?, 0, NULL, ?)
+       ON CONFLICT(board_id, id) DO UPDATE SET
+         name = excluded.name, position = excluded.position, is_done = excluded.is_done`,
+    ).run(
+      column.id,
+      companyId,
+      boardId,
+      column.name,
+      column.color,
+      column.order,
+      column.isDone ? 1 : 0,
+    )
     map[column.name] = column.id
   }
   return map
@@ -224,6 +234,37 @@ const upsertIssue = (companyId, boardId, issue, fallbackStatus) => {
   return id
 }
 
+/**
+ * Jira epics become Zetoo epics, not issues.
+ *
+ * In Jira an epic is just another issue; in Zetoo it is the lane the timeline
+ * groups by. Importing it as both would put a card on the board that competes
+ * with the work it contains and skews every "x of y done" figure.
+ */
+const upsertEpic = (companyId, boardId, epic) => {
+  const found = existingId('epics', companyId, epic.externalId)
+  if (found) {
+    db.prepare('UPDATE epics SET name = ? WHERE id = ?').run(epic.title, found)
+    return found
+  }
+  const id = uid('e-')
+  const palette = ['bg-brand-500', 'bg-success-500', 'bg-orange-400', 'bg-blue-light-500']
+  db.prepare(
+    `INSERT INTO epics (id, company_id, board_id, name, color, position, external_source, external_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    companyId,
+    boardId,
+    epic.title,
+    palette[nextPosition('epics', companyId) % palette.length],
+    nextPosition('epics', companyId),
+    SOURCE,
+    String(epic.externalId),
+  )
+  return id
+}
+
 const upsertWorklog = (companyId, projectId, entry, issueId) => {
   const found = existingId('time_entries', companyId, entry.externalId)
   if (found) {
@@ -297,6 +338,7 @@ export const runImport = async ({
     const fields = await client.fields()
     const storyPointField = findStoryPointField(fields)
     const sprintField = findSprintField(fields)
+    const startDateField = findStartDateField(fields)
 
     const projects = await client.projects()
     const chosen = projects.filter((p) => projectKeys.includes(p.key))
@@ -337,11 +379,14 @@ export const runImport = async ({
       // issue that already exists.
       const issuesByKey = new Map()
       const subtasksByParent = new Map()
+      const epicByExternalKey = new Map()
 
       progress(runId, { step: `Projekt ${project.key}: Vorgänge` })
 
       const jql = `project = "${project.key}" ORDER BY created ASC`
-      const issueFields = [...BASE_FIELDS, storyPointField, sprintField].filter(Boolean).join(',')
+      const issueFields = [...BASE_FIELDS, storyPointField, sprintField, startDateField]
+        .filter(Boolean)
+        .join(',')
 
       // The token-paged endpoint reports no total, so the count comes from a
       // separate call. It is approximate, hence `Math.max` rather than a
@@ -357,6 +402,7 @@ export const runImport = async ({
           const issue = mapIssue(raw, {
             storyPointField,
             sprintField,
+            startDateField,
             statusToColumn,
             accountToMember,
             sprintByExternalId,
@@ -374,13 +420,25 @@ export const runImport = async ({
             continue
           }
 
+          if (issue.type === 'epic') {
+            epicByExternalKey.set(issue.externalKey, upsertEpic(companyId, boardId, issue))
+            continue
+          }
+
           issue.checklist = []
           const id = upsertIssue(companyId, boardId, issue, fallbackStatus)
-          issuesByKey.set(issue.externalKey, { id, raw, issue })
+          issuesByKey.set(issue.externalKey, { id, raw, issue, parentKey: issue.parentKey })
 
           done += 1
           if (done % 25 === 0) progress(runId, { done })
         }
+      }
+
+      // `parent` carries the epic link for ordinary issues, and only becomes
+      // resolvable once every epic has been created.
+      for (const { id, parentKey } of issuesByKey.values()) {
+        const epicId = parentKey ? epicByExternalKey.get(parentKey) : null
+        if (epicId) db.prepare('UPDATE issues SET epic_id = ? WHERE id = ?').run(epicId, id)
       }
 
       // Sub-tasks ride along as checklist items on their parent.

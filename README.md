@@ -26,6 +26,12 @@ by SQLite.
 - **Leistungsnachweis** — pick a project and a period (last month is preselected),
   check the preview, export a `.docx`
 
+**Nudges and standings**
+
+- **Benachrichtigungen** — connect a Google Chat space and get a reminder at the
+  end of a day whose hours are still unbooked
+- **Rangliste** — points, levels and streaks for booking time consistently
+
 **Workspace** — company registration wizard, team and member profiles, appearance
 and theming, and a language picker covering interface text plus date and number
 formats.
@@ -106,23 +112,31 @@ works.
 
 `server/mcp.mjs` is an MCP server that lets Claude read and manage a workspace:
 
-Thirty tools covering the whole dashboard, so you can just say what you want:
+Forty-one tools covering the whole dashboard, so you can just say what you want:
 *"open a board for Kunde X, add an Abnahme column, put Lena on the concept and
 book three hours on it."*
 
 | Area | Tools |
 | --- | --- |
-| Overview | `zetoo_dashboard`, `zetoo_workspace` |
-| Company | `zetoo_update_company` |
-| People | `zetoo_create_member`, `zetoo_update_member`, `zetoo_delete_member` |
-| Boards | `zetoo_create_board`, `zetoo_update_board`, `zetoo_delete_board` |
-| Columns | `zetoo_list_columns`, `zetoo_create_column`, `zetoo_update_column`, `zetoo_delete_column` |
-| Sprints | `zetoo_list_sprints`, `zetoo_create_sprint`, `zetoo_update_sprint` |
-| Epics | `zetoo_create_epic` |
-| Issues | `zetoo_list_issues`, `zetoo_create_issue`, `zetoo_update_issue`, `zetoo_move_issue`, `zetoo_delete_issue` |
-| Projects | `zetoo_create_project`, `zetoo_update_project`, `zetoo_delete_project` |
-| Time | `zetoo_log_time`, `zetoo_list_time_entries`, `zetoo_update_time_entry`, `zetoo_delete_time_entry` |
-| Reporting | `zetoo_record_summary` |
+| Overview | `dashboard`, `workspace` |
+| Company | `update_company` |
+| People | `list_members`, `create_member`, `update_member`, `delete_member` |
+| Boards | `list_boards`, `create_board`, `update_board`, `delete_board`, `set_active_board` |
+| Columns | `list_columns`, `create_column`, `update_column`, `delete_column` |
+| Sprints | `list_sprints`, `create_sprint`, `update_sprint`, `delete_sprint` |
+| Epics | `list_epics`, `create_epic`, `update_epic`, `delete_epic` |
+| Issues | `get_issue`, `list_issues`, `create_issue`, `update_issue`, `move_issue`, `delete_issue` |
+| Checklists | `checklist` (add, toggle, done, undone, remove, clear) |
+| Projects | `list_projects`, `create_project`, `update_project`, `delete_project` |
+| Time | `log_time`, `list_time_entries`, `update_time_entry`, `delete_time_entry` |
+| Reporting | `record_summary`, `leaderboard` |
+
+All prefixed `zetoo_`. Every field the web app can edit is reachable
+from here — including epics, sprints, story points, start dates, labels,
+checklists and the link between a booked hour and its issue.
+
+`get_issue` also accepts the key a row was migrated under, so `SCRUM-2` works as
+well as the Zetoo id.
 
 Every tool is scoped to one workspace and refuses to touch rows belonging to
 another. `zetoo_dashboard` is the one to start from: it returns per-board
@@ -224,6 +238,44 @@ Three documents, one per client store. `GET` reads, `PUT` replaces.
 | `/api/health` | Status, database path, row counts |
 | `/api/auth/*` | Google sign-in, session, sign-out |
 | `/api/reset` | Empties the workspace |
+| `/api/me/notifications` | Reminder settings and the messages already sent |
+| `/api/me/notifications/test` | Sends the nudge straight away |
+| `/api/leaderboard` | Standings, `?days=` sets the window |
+| `/api/reminders/run` | Runs the due-reminder sweep without waiting for the tick |
+
+## Reminders and scoring
+
+A person who forgets to book their hours gets a nudge at a time of their
+choosing, on the weekdays they pick. It only goes out when the day really has
+nothing booked, and at most once per day.
+
+Delivery has two channels. If a Google Chat **incoming webhook** is stored, the
+message goes to that space; a copy is always written to the in-app list on
+`/settings/notifications`. Incoming webhooks are a Google **Workspace** feature —
+a personal Gmail account has no such menu entry, so those people only get the
+in-app copy.
+
+The webhook is a bearer URL: anyone holding it can post into the space. It is
+therefore stored server-side and never handed back to the browser in full, only
+masked. Saving with an empty field leaves the stored one untouched.
+
+Points are **derived from the time entries on every read**, never stored, so
+correcting or deleting an entry immediately corrects the score:
+
+| | |
+| --- | --- |
+| +10 | per working day with time booked |
+| +5 | booked the same day rather than backdated |
+| +5 | the day reaches the person's own daily capacity |
+| +2 | per day of the running streak, capped at 10 |
+
+250 points make a level: Neuling, Mitläufer, Verlässlich, Vorbild, Taktgeber,
+Legende. There are no deductions — a bad week costs the streak, which is
+discouraging enough.
+
+The scheduler ticks every minute inside the API process. A member is marked as
+reminded for a date *before* the message goes out, so a restart or a slow
+webhook can never produce a second nudge.
 
 ## Word export
 

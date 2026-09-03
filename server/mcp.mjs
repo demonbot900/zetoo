@@ -6,6 +6,7 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { bumpGeneration, db } from './db.mjs'
+import { leaderboard } from './gamification.mjs'
 
 /**
  * Zetoo MCP server.
@@ -103,6 +104,51 @@ const remove = (table, id) => {
 
 const bool01 = (value) => (value ? 1 : 0)
 
+/**
+ * Collapses the whitespace people cannot see.
+ *
+ * Text pasted out of Jira or Word carries non-breaking spaces (U+00A0), so a
+ * search for "Aufgabe 1" typed with an ordinary space finds nothing. Both
+ * sides of a comparison go through this.
+ */
+const flatten = (value) => String(value ?? '').replace(/[\u00a0\u2007\u202f]/g, ' ')
+
+const jsonArray = (value, fallback = []) => {
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? parsed : fallback
+    } catch {
+      // A plain comma-separated list is friendlier than demanding JSON.
+      return value.split(',').map((part) => part.trim()).filter(Boolean)
+    }
+  }
+  return fallback
+}
+
+/**
+ * Column ids that mean "finished" on a board.
+ *
+ * Boards translate and rename their last column, so progress can never be read
+ * off a literal `done`. `is_done` is set by the importer from Jira's status
+ * category, and by migration for boards that predate the flag.
+ */
+const doneColumns = (boardId) =>
+  new Set(
+    db
+      .prepare('SELECT id FROM status_columns WHERE company_id = ? AND board_id = ? AND is_done = 1')
+      .all(companyId(), boardId)
+      .map((row) => row.id),
+  )
+
+
+/** The board the web app currently opens on. */
+const getActiveBoardId = () =>
+  db
+    .prepare("SELECT value FROM app_state WHERE company_id = ? AND key = 'activeBoardId'")
+    .get(companyId())?.value ?? null
+
 const isoDate = (date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
     date.getDate(),
@@ -184,8 +230,10 @@ const TOOLS = [
         params.push(args.assigneeId)
       }
       if (args.search) {
-        where.push('lower(i.title) LIKE ?')
-        params.push(`%${args.search.toLowerCase()}%`)
+        // replace() mirrors `flatten` inside SQLite so a normal space matches
+        // a non-breaking one.
+        where.push("lower(replace(i.title, char(160), ' ')) LIKE ?")
+        params.push(`%${flatten(args.search).toLowerCase()}%`)
       }
       params.push(Math.min(Number(args.limit) || 50, 200))
 
@@ -217,7 +265,11 @@ const TOOLS = [
         status: str('Column id, default the board first column'),
         priority: str('highest | high | medium | low, default medium'),
         assigneeId: str('Member id'),
+        epicId: str('Epic the issue belongs to'),
+        sprintId: str('Sprint to plan it into; defaults to the active one'),
         estimateHours: num('Estimate in hours'),
+        storyPoints: num('Story points'),
+        startDate: str('Start date, YYYY-MM-DD'),
         dueDate: str('Due date, YYYY-MM-DD'),
       },
       required: ['boardId', 'title'],
@@ -251,7 +303,7 @@ const TOOLS = [
            assignee_id, sprint_id, epic_id, estimate_hours, logged_hours,
            story_points, start_date, due_date, completed_at, labels, position,
            cover_color, checklist
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, 0, NULL, ?, NULL, '[]', ?, '', '[]')`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, NULL, '[]', ?, '', '[]')`,
       ).run(
         issueId,
         id,
@@ -262,8 +314,11 @@ const TOOLS = [
         status,
         args.priority ?? 'medium',
         args.assigneeId ?? null,
-        sprint?.id ?? null,
+        args.sprintId ?? sprint?.id ?? null,
+        args.epicId ?? null,
         Number(args.estimateHours) || 0,
+        Number(args.storyPoints) || 0,
+        args.startDate ?? null,
         args.dueDate ?? null,
         db.prepare('SELECT COUNT(*) AS n FROM issues WHERE company_id = ?').get(id).n,
       )
@@ -281,10 +336,18 @@ const TOOLS = [
         id: str('Issue id'),
         title: str(''),
         description: str(''),
+        type: str('epic | story | task | bug'),
         status: str('Column id'),
         priority: str('highest | high | medium | low'),
         assigneeId: str('Member id, or empty string to unassign'),
+        epicId: str('Epic id, or empty string to detach'),
+        sprintId: str('Sprint id, or empty string for the backlog'),
         estimateHours: num(''),
+        loggedHours: num('Hours already spent'),
+        storyPoints: num(''),
+        coverColor: str('Hex colour shown on the card'),
+        labels: str('Comma-separated, or a JSON array'),
+        startDate: str('YYYY-MM-DD, or empty string to clear'),
         dueDate: str('YYYY-MM-DD, or empty string to clear'),
       },
       required: ['id'],
@@ -296,16 +359,26 @@ const TOOLS = [
         description: 'description',
         status: 'status',
         priority: 'priority',
+        type: 'type',
         assigneeId: 'assignee_id',
+        epicId: 'epic_id',
+        sprintId: 'sprint_id',
         estimateHours: 'estimate_hours',
+        loggedHours: 'logged_hours',
+        storyPoints: 'story_points',
+        coverColor: 'cover_color',
+        labels: 'labels',
+        startDate: 'start_date',
         dueDate: 'due_date',
       }
+      const nullable = ['assigneeId', 'epicId', 'sprintId', 'startDate', 'dueDate']
+      if (args.labels !== undefined) args = { ...args, labels: JSON.stringify(jsonArray(args.labels)) }
       const sets = []
       const params = []
       for (const [key, column] of Object.entries(columns)) {
         if (args[key] === undefined) continue
         sets.push(`${column} = ?`)
-        params.push(args[key] === '' && (key === 'assigneeId' || key === 'dueDate') ? null : args[key])
+        params.push(args[key] === '' && nullable.includes(key) ? null : args[key])
       }
       if (!sets.length) throw new Error('Keine Felder zum Ändern übergeben.')
 
@@ -383,6 +456,7 @@ const TOOLS = [
         hours: num('Duration; rounded to the nearest 0.25'),
         category: str('e.g. PM, Konzeption, Entwicklung'),
         memberId: str('Member id; defaults to the workspace owner'),
+        issueId: str('Issue the work belongs to'),
         description: str('What was done — one line of the Leistungsnachweis'),
       },
       required: ['projectId', 'date', 'hours'],
@@ -406,7 +480,7 @@ const TOOLS = [
       db.prepare(
         `INSERT INTO time_entries
            (id, company_id, project_id, date, category, hours, member_id, description, issue_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         entryId,
         id,
@@ -416,6 +490,7 @@ const TOOLS = [
         hours,
         member?.id ?? null,
         args.description ?? '',
+        args.issueId ?? null,
       )
       touched()
       return { id: entryId, hours }
@@ -461,6 +536,32 @@ const TOOLS = [
         byCategory: group('category'),
         byMember: group('member'),
         totalHours: Math.round(rows.reduce((sum, row) => sum + row.hours, 0) * 100) / 100,
+      }
+    },
+  },
+
+  {
+    name: 'zetoo_leaderboard',
+    description:
+      'Time-tracking standings: points, level, streak and coverage per person. Points are derived from the entries, never stored, so a corrected entry corrects the score.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        days: num('How far back to score, default 90'),
+      },
+    },
+    handler: (args) => {
+      const rows = leaderboard(companyId(), { days: args.days ? Number(args.days) : 90 })
+      return {
+        scoring: {
+          perBookedDay: 10,
+          sameDayBonus: 5,
+          fullDayBonus: 5,
+          perStreakDay: '2, capped at 10 days',
+          pointsPerLevel: 250,
+        },
+        openToday: rows.filter((row) => !row.bookedToday).map((row) => row.name),
+        rows,
       }
     },
   },
@@ -536,9 +637,9 @@ const TOOLS = [
       ]
       columns.forEach(([colId, name, color, wip], index) => {
         db.prepare(
-          `INSERT INTO status_columns (id, company_id, board_id, name, color, wip_limit, position, collapsed, dot)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
-        ).run(colId, id, boardId, name, color, wip, index)
+          `INSERT INTO status_columns (id, company_id, board_id, name, color, wip_limit, position, collapsed, dot, is_done)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)`,
+        ).run(colId, id, boardId, name, color, wip, index, colId === 'done' ? 1 : 0)
       })
 
       db.prepare(
@@ -574,7 +675,8 @@ const TOOLS = [
               'SELECT status, estimate_hours, logged_hours, due_date FROM issues WHERE company_id = ? AND board_id = ?',
             )
             .all(id, board.id)
-          const done = issues.filter((i) => i.status === 'done').length
+          const finished = doneColumns(board.id)
+          const done = issues.filter((i) => finished.has(i.status)).length
           return {
             ...board,
             sprint:
@@ -588,24 +690,29 @@ const TOOLS = [
             percent: issues.length ? Math.round((done / issues.length) * 100) : 0,
             estimateHours: issues.reduce((sum, i) => sum + i.estimate_hours, 0),
             loggedHours: issues.reduce((sum, i) => sum + i.logged_hours, 0),
-            overdue: issues.filter((i) => i.status !== 'done' && i.due_date && i.due_date < today)
-              .length,
+            overdue: issues.filter(
+              (i) => !finished.has(i.status) && i.due_date && i.due_date < today,
+            ).length,
           }
         }),
         workload: db
           .prepare(
             `SELECT m.id, m.first_name || ' ' || m.last_name AS name, m.capacity_hours AS capacity,
-                    COALESCE(SUM(CASE WHEN i.status <> 'done' THEN i.estimate_hours END), 0) AS assigned
+                    COALESCE(SUM(CASE WHEN c.is_done IS NOT 1 THEN i.estimate_hours END), 0) AS assigned
              FROM members m
              LEFT JOIN issues i ON i.assignee_id = m.id AND i.company_id = m.company_id
+             LEFT JOIN status_columns c ON c.board_id = i.board_id AND c.id = i.status
              WHERE m.company_id = ? GROUP BY m.id ORDER BY assigned DESC`,
           )
           .all(id),
         overdue: db
           .prepare(
             `SELECT i.id, i.title, i.due_date AS dueDate, b.name AS board
-             FROM issues i LEFT JOIN boards b ON b.id = i.board_id
-             WHERE i.company_id = ? AND i.status <> 'done' AND i.due_date IS NOT NULL AND i.due_date < ?
+             FROM issues i
+             LEFT JOIN boards b ON b.id = i.board_id
+             LEFT JOIN status_columns c ON c.board_id = i.board_id AND c.id = i.status
+             WHERE i.company_id = ? AND c.is_done IS NOT 1
+               AND i.due_date IS NOT NULL AND i.due_date < ?
              ORDER BY i.due_date`,
           )
           .all(id, today),
@@ -637,6 +744,10 @@ const TOOLS = [
         vatId: str(''),
         timezone: str(''),
         hoursPerDay: num('Working hours per day'),
+        size: str('1-10 | 11-50 | 51-200 | 201-1000 | 1000+'),
+        plan: str('starter | team | business'),
+        logo: str('Image URL or data URL'),
+        workDays: str('ISO weekday numbers, e.g. "1,2,3,4,5"'),
       },
     },
     handler: (args) => {
@@ -652,13 +763,19 @@ const TOOLS = [
         vatId: 'vat_id',
         timezone: 'timezone',
         hoursPerDay: 'hours_per_day',
+        size: 'size',
+        plan: 'plan',
+        logo: 'logo',
+        workDays: 'work_days',
       }
       const sets = []
       const params = []
       for (const [key, column] of Object.entries(mapping)) {
         if (args[key] === undefined) continue
         sets.push(`${column} = ?`)
-        params.push(args[key])
+        params.push(
+          key === 'workDays' ? JSON.stringify(jsonArray(args[key]).map(Number)) : args[key],
+        )
       }
       if (!sets.length) throw new Error('Keine Felder zum Aendern uebergeben.')
       params.push(id)
@@ -728,11 +845,27 @@ const TOOLS = [
         role: str('owner | admin | manager | member | viewer'),
         status: str('active | invited | inactive'),
         capacityHours: num(''),
+        email: str('Must stay unique across all workspaces'),
+        phone: str(''),
+        location: str(''),
+        timezone: str(''),
+        bio: str(''),
+        avatar: str('Image URL'),
+        accent: str('Hex colour behind the initials'),
+        skills: str('Comma-separated, or a JSON array'),
       },
       required: ['id'],
     },
-    handler: (args) =>
-      patch(
+    handler: (args) => {
+      if (args.email) {
+        const clash = db
+          .prepare('SELECT id FROM members WHERE lower(email) = lower(?) AND id <> ?')
+          .get(args.email, args.id)
+        if (clash) throw new Error(`${args.email} gehoert bereits zu einem anderen Konto.`)
+      }
+      const payload = { ...args }
+      if (payload.skills !== undefined) payload.skills = JSON.stringify(jsonArray(payload.skills))
+      return patch(
         'members',
         args.id,
         {
@@ -743,9 +876,18 @@ const TOOLS = [
           role: 'role',
           status: 'status',
           capacityHours: 'capacity_hours',
+          email: 'email',
+          phone: 'phone',
+          location: 'location',
+          timezone: 'timezone',
+          bio: 'bio',
+          avatar: 'avatar',
+          accent: 'accent',
+          skills: 'skills',
         },
-        args,
-      ),
+        payload,
+      )
+    },
   },
 
   {
@@ -831,6 +973,7 @@ const TOOLS = [
         name: str('Column name'),
         color: str('Hex colour'),
         wipLimit: num('Cards allowed before the column warns'),
+        isDone: { type: 'boolean', description: 'Issues here count as finished' },
       },
       required: ['boardId', 'name'],
     },
@@ -851,8 +994,8 @@ const TOOLS = [
       while (taken.includes(columnId)) columnId = `${base}_${suffix++}`
 
       db.prepare(
-        `INSERT INTO status_columns (id, company_id, board_id, name, color, wip_limit, position, collapsed, dot)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
+        `INSERT INTO status_columns (id, company_id, board_id, name, color, wip_limit, position, collapsed, dot, is_done)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)`,
       ).run(
         columnId,
         id,
@@ -861,6 +1004,7 @@ const TOOLS = [
         args.color ?? '#98a2b3',
         args.wipLimit === undefined ? null : Number(args.wipLimit),
         taken.length,
+        args.isDone ? 1 : 0,
       )
       touched()
       return { id: columnId }
@@ -1111,7 +1255,12 @@ const TOOLS = [
       // Completion is what the burndown reads, so keep it in step with the column.
       if (args.status !== undefined) {
         db.prepare(
-          "UPDATE issues SET completed_at = CASE WHEN status = 'done' THEN date('now') ELSE NULL END WHERE id = ? AND company_id = ?",
+          `UPDATE issues SET completed_at = CASE
+             WHEN EXISTS (
+               SELECT 1 FROM status_columns c
+               WHERE c.board_id = issues.board_id AND c.id = issues.status AND c.is_done = 1
+             ) THEN date('now') ELSE NULL END
+           WHERE id = ? AND company_id = ?`,
         ).run(args.id, companyId())
       }
       return result
@@ -1138,6 +1287,7 @@ const TOOLS = [
         client: str(''),
         reference: str('e.g. RE-{YYYY}-{NR}'),
         contractor: str(''),
+        categories: str('Service categories, comma-separated or a JSON array'),
         archived: { type: 'boolean', description: '' },
       },
       required: ['id'],
@@ -1145,6 +1295,9 @@ const TOOLS = [
     handler: (args) => {
       const payload = { ...args }
       if (payload.archived !== undefined) payload.archived = bool01(payload.archived)
+      if (payload.categories !== undefined) {
+        payload.categories = JSON.stringify(jsonArray(payload.categories))
+      }
       return patch(
         'projects',
         args.id,
@@ -1153,6 +1306,7 @@ const TOOLS = [
           client: 'client',
           reference: 'reference',
           contractor: 'contractor',
+          categories: 'categories',
           archived: 'archived',
         },
         payload,
@@ -1185,6 +1339,7 @@ const TOOLS = [
         category: str(''),
         hours: num(''),
         memberId: str('Member id'),
+        issueId: str('Issue id, or empty string to detach'),
         description: str(''),
       },
       required: ['id'],
@@ -1202,9 +1357,11 @@ const TOOLS = [
           category: 'category',
           hours: 'hours',
           memberId: 'member_id',
+          issueId: 'issue_id',
           description: 'description',
         },
         payload,
+        ['issueId'],
       )
     },
   },
@@ -1214,6 +1371,283 @@ const TOOLS = [
     description: 'Removes a booked entry.',
     inputSchema: { type: 'object', properties: { id: str('Entry id') }, required: ['id'] },
     handler: (args) => remove('time_entries', args.id),
+  },
+
+  /* ---------------- Reading one thing in full ---------------- */
+
+  {
+    name: 'zetoo_get_issue',
+    description:
+      'Everything about one issue: description, labels, checklist, epic, sprint and the hours booked against it. Accepts the Zetoo id or a migrated key such as SCRUM-2.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: str('Issue id, or the external key it was imported under') },
+      required: ['id'],
+    },
+    handler: (args) => {
+      const cid = companyId()
+      const row =
+        db.prepare('SELECT * FROM issues WHERE company_id = ? AND id = ?').get(cid, args.id) ??
+        db.prepare('SELECT * FROM issues WHERE company_id = ? AND external_key = ?').get(cid, args.id)
+      if (!row) throw new Error(`Vorgang ${args.id} nicht gefunden.`)
+
+      const name = (table, id) =>
+        id ? (db.prepare(`SELECT name FROM ${table} WHERE id = ?`).get(id)?.name ?? null) : null
+
+      return {
+        id: row.id,
+        externalKey: row.external_key,
+        title: row.title,
+        description: row.description,
+        type: row.type,
+        status: row.status,
+        statusName: db
+          .prepare('SELECT name FROM status_columns WHERE board_id = ? AND id = ?')
+          .get(row.board_id, row.status)?.name ?? row.status,
+        priority: row.priority,
+        board: name('boards', row.board_id),
+        boardId: row.board_id,
+        sprint: name('sprints', row.sprint_id),
+        sprintId: row.sprint_id,
+        epic: name('epics', row.epic_id),
+        epicId: row.epic_id,
+        assignee: row.assignee_id
+          ? db
+              .prepare("SELECT first_name || ' ' || last_name AS n FROM members WHERE id = ?")
+              .get(row.assignee_id)?.n
+          : null,
+        assigneeId: row.assignee_id,
+        estimateHours: row.estimate_hours,
+        loggedHours: row.logged_hours,
+        storyPoints: row.story_points,
+        startDate: row.start_date,
+        dueDate: row.due_date,
+        completedAt: row.completed_at,
+        labels: jsonArray(row.labels),
+        checklist: jsonArray(row.checklist),
+        timeEntries: db
+          .prepare('SELECT id, date, category, hours, description FROM time_entries WHERE issue_id = ? ORDER BY date')
+          .all(row.id),
+      }
+    },
+  },
+
+  /* ---------------- Listing ---------------- */
+
+  {
+    name: 'zetoo_list_boards',
+    description: 'All boards with their client, colour, linked billing project and counts.',
+    inputSchema: {
+      type: 'object',
+      properties: { includeArchived: { type: 'boolean', description: 'Default false' } },
+    },
+    handler: (args) => {
+      const cid = companyId()
+      return db
+        .prepare(
+          `SELECT b.id, b.name, b.client, b.description, b.color, b.archived,
+                  b.project_id AS projectId, p.name AS project,
+                  (SELECT COUNT(*) FROM issues i WHERE i.board_id = b.id) AS issues
+           FROM boards b LEFT JOIN projects p ON p.id = b.project_id
+           WHERE b.company_id = ? ${args.includeArchived ? '' : 'AND b.archived = 0'}
+           ORDER BY b.position`,
+        )
+        .all(cid)
+        .map((r) => ({ ...r, archived: r.archived === 1, active: r.id === getActiveBoardId() }))
+    },
+  },
+
+  {
+    name: 'zetoo_list_members',
+    description: 'Everyone in the workspace, with role, capacity and current assigned hours.',
+    inputSchema: { type: 'object', properties: {} },
+    handler: () =>
+      db
+        .prepare(
+          `SELECT m.id, m.first_name AS firstName, m.last_name AS lastName, m.email, m.job_title AS jobTitle,
+                  m.department, m.role, m.status, m.capacity_hours AS capacityHours, m.timezone, m.location,
+                  COALESCE(SUM(CASE WHEN c.is_done IS NOT 1 THEN i.estimate_hours END), 0) AS assignedHours
+           FROM members m
+           LEFT JOIN issues i ON i.assignee_id = m.id
+           LEFT JOIN status_columns c ON c.board_id = i.board_id AND c.id = i.status
+           WHERE m.company_id = ? GROUP BY m.id ORDER BY m.position`,
+        )
+        .all(companyId()),
+  },
+
+  {
+    name: 'zetoo_list_projects',
+    description: 'Billing projects with their reference pattern, categories and booked hours.',
+    inputSchema: {
+      type: 'object',
+      properties: { includeArchived: { type: 'boolean', description: 'Default false' } },
+    },
+    handler: (args) => {
+      const cid = companyId()
+      return db
+        .prepare(
+          `SELECT p.id, p.name, p.client, p.reference, p.contractor, p.categories, p.archived,
+                  p.template_name AS templateName,
+                  (SELECT COUNT(*) FROM time_entries t WHERE t.project_id = p.id) AS entries,
+                  (SELECT COALESCE(SUM(hours), 0) FROM time_entries t WHERE t.project_id = p.id) AS hours
+           FROM projects p
+           WHERE p.company_id = ? ${args.includeArchived ? '' : 'AND p.archived = 0'}
+           ORDER BY p.created_at`,
+        )
+        .all(cid)
+        .map((r) => ({ ...r, archived: r.archived === 1, categories: jsonArray(r.categories) }))
+    },
+  },
+
+  {
+    name: 'zetoo_list_epics',
+    description: 'Epics with how much work hangs under each.',
+    inputSchema: { type: 'object', properties: { boardId: str('Restrict to one board') } },
+    handler: (args) => {
+      const cid = companyId()
+      const where = args.boardId ? 'AND e.board_id = ?' : ''
+      const params = args.boardId ? [cid, args.boardId] : [cid]
+      return db
+        .prepare(
+          `SELECT e.id, e.name, e.color, e.board_id AS boardId,
+                  COUNT(i.id) AS issues,
+                  COALESCE(SUM(i.estimate_hours), 0) AS estimateHours,
+                  COALESCE(SUM(i.story_points), 0) AS storyPoints
+           FROM epics e LEFT JOIN issues i ON i.epic_id = e.id
+           WHERE e.company_id = ? ${where} GROUP BY e.id ORDER BY e.position`,
+        )
+        .all(params)
+    },
+  },
+
+  /* ---------------- Epics and sprints, the rest of the way ---------------- */
+
+  {
+    name: 'zetoo_update_epic',
+    description: 'Renames an epic or recolours it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: str('Epic id'),
+        name: str(''),
+        color: str('Tailwind class, e.g. bg-brand-500'),
+      },
+      required: ['id'],
+    },
+    handler: (args) => patch('epics', args.id, { name: 'name', color: 'color' }, args),
+  },
+
+  {
+    name: 'zetoo_delete_epic',
+    description: 'Removes an epic. Its issues stay and simply lose the grouping.',
+    inputSchema: { type: 'object', properties: { id: str('Epic id') }, required: ['id'] },
+    handler: (args) => {
+      owned('epics', args.id)
+      db.prepare('UPDATE issues SET epic_id = NULL WHERE company_id = ? AND epic_id = ?').run(
+        companyId(),
+        args.id,
+      )
+      return remove('epics', args.id)
+    },
+  },
+
+  {
+    name: 'zetoo_delete_sprint',
+    description: 'Removes a sprint. Its issues fall back to the backlog rather than disappearing.',
+    inputSchema: { type: 'object', properties: { id: str('Sprint id') }, required: ['id'] },
+    handler: (args) => {
+      owned('sprints', args.id)
+      db.prepare('UPDATE issues SET sprint_id = NULL WHERE company_id = ? AND sprint_id = ?').run(
+        companyId(),
+        args.id,
+      )
+      return remove('sprints', args.id)
+    },
+  },
+
+  /* ---------------- Checklists ---------------- */
+
+  {
+    name: 'zetoo_checklist',
+    description:
+      "Edits an issue's checklist — the sub-steps a migrated Jira sub-task becomes. Use `action` to add, tick, untick, remove or clear.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        issueId: str('Issue id'),
+        action: str('add | toggle | done | undone | remove | clear'),
+        text: str('Item text, for add'),
+        itemId: str('Item id, for toggle/done/undone/remove'),
+      },
+      required: ['issueId', 'action'],
+    },
+    handler: (args) => {
+      const cid = companyId()
+      const row = db
+        .prepare('SELECT id, checklist FROM issues WHERE company_id = ? AND id = ?')
+        .get(cid, args.issueId)
+      if (!row) throw new Error(`Vorgang ${args.issueId} nicht gefunden.`)
+
+      let items = jsonArray(row.checklist)
+      const find = () => items.find((item) => item.id === args.itemId)
+
+      switch (args.action) {
+        case 'add': {
+          if (!args.text) throw new Error('`text` fehlt.')
+          items.push({ id: uid('c-'), text: args.text, done: false })
+          break
+        }
+        case 'toggle': {
+          const item = find()
+          if (!item) throw new Error(`Punkt ${args.itemId} nicht gefunden.`)
+          item.done = !item.done
+          break
+        }
+        case 'done':
+        case 'undone': {
+          const item = find()
+          if (!item) throw new Error(`Punkt ${args.itemId} nicht gefunden.`)
+          item.done = args.action === 'done'
+          break
+        }
+        case 'remove': {
+          items = items.filter((item) => item.id !== args.itemId)
+          break
+        }
+        case 'clear': {
+          items = []
+          break
+        }
+        default:
+          throw new Error(`Unbekannte Aktion: ${args.action}`)
+      }
+
+      db.prepare('UPDATE issues SET checklist = ? WHERE id = ? AND company_id = ?').run(
+        JSON.stringify(items),
+        row.id,
+        cid,
+      )
+      touched()
+      return { checklist: items }
+    },
+  },
+
+  /* ---------------- Which board the app shows ---------------- */
+
+  {
+    name: 'zetoo_set_active_board',
+    description:
+      'Chooses the board the web app opens on. Without this the app asks which board to show once more than one exists.',
+    inputSchema: { type: 'object', properties: { boardId: str('Board id') }, required: ['boardId'] },
+    handler: (args) => {
+      const cid = companyId()
+      owned('boards', args.boardId)
+      db.prepare(
+        "INSERT INTO app_state (company_id, key, value) VALUES (?, 'activeBoardId', ?) ON CONFLICT(company_id, key) DO UPDATE SET value = excluded.value",
+      ).run(cid, args.boardId)
+      touched()
+      return { activeBoardId: args.boardId }
+    },
   },
 
 ]

@@ -212,9 +212,18 @@ export const workspaceVersion = ref(0)
 const isRestoring = ref(true)
 /** Set once the user edits, so a slow server response cannot overwrite them. */
 let isDirty = false
+/**
+ * Nothing is written before the database has answered.
+ *
+ * A save is a whole-document replace, so a store that has not hydrated yet
+ * would push its empty state over the top and delete every row. That is not
+ * hypothetical: it is how a freshly opened tab wiped boards it had never
+ * loaded.
+ */
+let hasHydrated = false
 
 const persist = () => {
-  if (isRestoring.value) return
+  if (isRestoring.value || !hasHydrated) return
   isDirty = true
   syncSave('workspace', STORAGE_KEY, {
     company: state.company,
@@ -260,12 +269,14 @@ export const workspaceReady: Promise<void> = syncLoad<WorkspaceState>(
   STORAGE_KEY,
   (value) => !value.company,
 ).then((remote) => {
-  if (!remote || isDirty) return
-  isRestoring.value = true
-  apply(remote)
-  isRestoring.value = false
-  // Let the planner rebuild its team from the members the database returned.
-  workspaceVersion.value += 1
+  if (remote && !isDirty) {
+    isRestoring.value = true
+    apply(remote)
+    isRestoring.value = false
+    // Let the planner rebuild its team from the members the database returned.
+    workspaceVersion.value += 1
+  }
+  hasHydrated = true
 })
 
 /* ------------------------------------------------------------------ *

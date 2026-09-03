@@ -89,6 +89,13 @@ export interface StatusColumn {
   color: string
   /** Cards allowed before the column warns, or null for no limit. */
   wipLimit: number | null
+  /**
+   * Issues in this column count as finished.
+   *
+   * A flag rather than a well-known id: boards rename and translate their last
+   * column, so "Erledigt", "Shipped" and "Approved" all have to work.
+   */
+  isDone: boolean
   order: number
   collapsed: boolean
   /** Legacy Tailwind dot class kept for the seeded columns. */

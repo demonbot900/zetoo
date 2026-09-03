@@ -131,6 +131,22 @@ const router = createRouter({
       },
     },
     {
+      path: '/leaderboard',
+      name: 'Leaderboard',
+      component: () => import('../views/Team/LeaderboardPage.vue'),
+      meta: {
+        title: 'Rangliste',
+      },
+    },
+    {
+      path: '/settings/notifications',
+      name: 'Notifications',
+      component: () => import('../views/Settings/NotificationSettings.vue'),
+      meta: {
+        title: 'Benachrichtigungen',
+      },
+    },
+    {
       path: '/settings/appearance',
       name: 'Appearance',
       component: () => import('../views/Settings/AppearanceSettings.vue'),

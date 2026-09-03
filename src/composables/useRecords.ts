@@ -111,6 +111,15 @@ interface RecordsSnapshot {
 let isRestoring = true
 /** Set once the user edits, so a slow server response cannot overwrite them. */
 let isDirty = false
+/**
+ * Nothing is written before the database has answered.
+ *
+ * A save is a whole-document replace, so a store that has not hydrated yet
+ * would push its empty state over the top and delete every row. That is not
+ * hypothetical: it is how a freshly opened tab wiped boards it had never
+ * loaded.
+ */
+let hasHydrated = false
 
 const snapshotOf = (): RecordsSnapshot => ({
   projects: projects.map((project) => ({ ...project })),
@@ -121,7 +130,7 @@ const snapshotOf = (): RecordsSnapshot => ({
 })
 
 const save = () => {
-  if (isRestoring) return
+  if (isRestoring || !hasHydrated) return
   isDirty = true
   syncSave('records', STORAGE_KEY, snapshotOf())
 }
@@ -193,6 +202,7 @@ export const recordsReady: Promise<void> = Promise.all([
     apply(remote)
     isRestoring = false
   }
+  hasHydrated = true
 })
 
 /* ------------------------------------------------------------------ *

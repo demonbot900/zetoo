@@ -110,6 +110,8 @@ import {
   FolderIcon,
   DraftIcon,
   DocsIcon,
+  BellIcon,
+  BarChartIcon,
 } from '../../icons'
 import SidebarWidget from './SidebarWidget.vue'
 import ZetooLogo from '@/components/common/ZetooLogo.vue'
@@ -159,6 +161,7 @@ const menuGroups = computed(() => [
       { icon: PieChartIcon, name: t('nav.reports'), path: '/reports' },
       { icon: UserGroupIcon, name: t('nav.team'), path: '/team' },
       { icon: UserCircleIcon, name: t('nav.profile'), path: '/profile' },
+      { icon: BarChartIcon, name: t('nav.leaderboard'), path: '/leaderboard' },
     ],
   },
   {
@@ -174,6 +177,7 @@ const menuGroups = computed(() => [
     items: [
       { icon: BoxCubeIcon, name: t('nav.appearance'), path: '/settings/appearance' },
       { icon: SettingsIcon, name: t('nav.company'), path: '/settings/company' },
+      { icon: BellIcon, name: t('nav.notifications'), path: '/settings/notifications' },
       { icon: DraftIcon, name: t('nav.import'), path: '/settings/import' },
     ],
   },

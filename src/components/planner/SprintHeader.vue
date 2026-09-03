@@ -25,14 +25,41 @@
           </span>
         </div>
 
-        <div class="flex items-center gap-2.5">
-          <h2 class="text-lg font-semibold text-gray-800 dark:text-white/90">
-            {{ activeSprint?.name ?? "Kein Sprint" }}
+        <div class="flex flex-wrap items-center gap-2.5">
+          <!--
+            With more than one sprint the heading becomes a picker: the board
+            shows exactly one sprint, and without this there is no way to reach
+            the others.
+          -->
+          <ZSelect
+            v-if="sprintOptions.length > 1"
+            :model-value="activeSprint?.id ?? ''"
+            :options="sprintOptions"
+            aria-label="Sprint"
+            menu-class="w-72"
+            @update:model-value="(id) => (activeSprintId = String(id))"
+          />
+          <h2 v-else class="text-lg font-semibold text-gray-800 dark:text-white/90">
+            {{ activeSprint?.name ?? 'Kein Sprint' }}
           </h2>
           <span
-            class="rounded-full bg-brand-50 px-2.5 py-0.5 text-theme-xs font-medium text-brand-500 dark:bg-brand-500/15 dark:text-brand-400"
+            v-if="activeSprint"
+            class="rounded-full px-2.5 py-0.5 text-theme-xs font-medium"
+            :class="
+              activeSprint.state === 'active'
+                ? 'bg-brand-50 text-brand-500 dark:bg-brand-500/15 dark:text-brand-400'
+                : activeSprint.state === 'completed'
+                  ? 'bg-success-50 text-success-600 dark:bg-success-500/15'
+                  : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+            "
           >
-            Active
+            {{
+              activeSprint.state === 'active'
+                ? 'Aktiv'
+                : activeSprint.state === 'completed'
+                  ? 'Abgeschlossen'
+                  : 'Geplant'
+            }}
           </span>
         </div>
         <p class="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">
@@ -86,8 +113,27 @@ import ZSelect from '@/components/ui/ZSelect.vue'
 
 defineEmits<{ create: [] }>()
 
-const { activeSprint, sprintTotals, sprintDays, activeBoard, activeBoards, activeBoardId, switchBoard } =
-  usePlanner()
+const {
+  activeSprint,
+  activeSprintId,
+  sprints,
+  issues,
+  sprintTotals,
+  sprintDays,
+  activeBoard,
+  activeBoards,
+  activeBoardId,
+  switchBoard,
+} = usePlanner()
+
+/** Every sprint of the open board, with how much work sits in it. */
+const sprintOptions = computed(() =>
+  sprints.value.map((sprint) => ({
+    value: sprint.id,
+    label: sprint.name,
+    hint: `${issues.value.filter((issue) => issue.sprintId === sprint.id).length} Vorgänge · ${formatDate(sprint.startDate)} – ${formatDate(sprint.endDate)}`,
+  })),
+)
 
 const boardOptions = computed(() =>
   activeBoards.value.map((board) => ({

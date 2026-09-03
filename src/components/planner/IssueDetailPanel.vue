@@ -119,11 +119,43 @@
           </div>
           <div>
             <dt class="zt-label">Start date</dt>
-            <input v-model="issue.startDate" type="date" class="zt-input" />
+            <div class="relative">
+              <flat-pickr
+                v-model="issue.startDate"
+                :config="dateConfig"
+                class="zt-input pr-9"
+                placeholder="Datum wählen"
+              />
+              <button
+                v-if="issue.startDate"
+                type="button"
+                class="absolute right-2 top-1/2 -translate-y-1/2 rounded px-1.5 text-theme-xs text-gray-400 hover:text-error-500"
+                aria-label="Startdatum entfernen"
+                @click="issue.startDate = null"
+              >
+                &times;
+              </button>
+            </div>
           </div>
           <div>
             <dt class="zt-label">Due date</dt>
-            <input v-model="issue.dueDate" type="date" class="zt-input" />
+            <div class="relative">
+              <flat-pickr
+                v-model="issue.dueDate"
+                :config="dateConfig"
+                class="zt-input pr-9"
+                placeholder="Datum wählen"
+              />
+              <button
+                v-if="issue.dueDate"
+                type="button"
+                class="absolute right-2 top-1/2 -translate-y-1/2 rounded px-1.5 text-theme-xs text-gray-400 hover:text-error-500"
+                aria-label="Fälligkeitsdatum entfernen"
+                @click="issue.dueDate = null"
+              >
+                &times;
+              </button>
+            </div>
           </div>
         </dl>
       </div>
@@ -364,8 +396,22 @@ import {
   usePlanner,
 } from '@/composables/usePlanner'
 import { withAlpha } from '@/utils/color'
+import flatPickr from 'vue-flatpickr-component'
+
+/**
+ * Same picker the rest of the app uses. `altInput` shows the German format
+ * while the model keeps the ISO date every other screen expects.
+ */
+const dateConfig = {
+  dateFormat: 'Y-m-d',
+  altInput: true,
+  altFormat: 'd.m.Y',
+  allowInput: true,
+  locale: { firstDayOfWeek: 1 },
+}
 
 const {
+  isDoneStatus,
   selectedIssue,
   selectIssue,
   team,
@@ -515,7 +561,7 @@ const removeLabel = (label: string) => {
 
 const onStatusChange = () => {
   if (!issue.value) return
-  issue.value.completedAt = issue.value.status === 'done' ? today : null
+  issue.value.completedAt = isDoneStatus(issue.value.status) ? today : null
   normaliseOrder(issue.value.status)
 }
 
