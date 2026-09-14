@@ -18,30 +18,6 @@
       <router-link to="/dashboard" class="flex flex-col gap-3">
         <ZetooLogo v-if="isExpanded || isHovered || isMobileOpen" variant="full" :width="150" />
         <ZetooLogo v-else variant="icon" :width="32" />
-
-        <!-- Which workspace this Zetoo instance is showing. -->
-        <span
-          v-if="(isExpanded || isHovered || isMobileOpen) && company"
-          class="flex items-center gap-2"
-        >
-          <span
-            class="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md text-[10px] font-bold"
-            :style="
-              company.logo ? {} : { backgroundColor: brandColor, color: 'var(--brand-contrast)' }
-            "
-          >
-            <img
-              v-if="company.logo"
-              :src="company.logo"
-              alt="Company logo"
-              class="h-full w-full object-cover"
-            />
-            <template v-else>{{ monogram }}</template>
-          </span>
-          <span class="truncate text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-            {{ company.name }}
-          </span>
-        </span>
       </router-link>
     </div>
     <div class="flex min-h-0 flex-1 flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
@@ -117,26 +93,10 @@ import SidebarWidget from './SidebarWidget.vue'
 import ZetooLogo from '@/components/common/ZetooLogo.vue'
 import BoxCubeIcon from '@/icons/BoxCubeIcon.vue'
 import { useSidebar } from '@/composables/useSidebar'
-import { useWorkspace } from '@/composables/useWorkspace'
-import { useAppearance } from '@/composables/useAppearance'
 import { useLocale } from '@/composables/useLocale'
 
 const route = useRoute()
-const { company } = useWorkspace()
-const { appearance } = useAppearance()
 const { t } = useLocale()
-
-const brandColor = computed(() => appearance.brand)
-
-const monogram = computed(
-  () =>
-    (company.value?.name ?? 'Zetoo')
-      .split(' ')
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((word) => word.charAt(0).toUpperCase())
-      .join('') || 'Z',
-)
 
 const { isExpanded, isMobileOpen, isHovered } = useSidebar()
 

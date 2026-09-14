@@ -44,16 +44,6 @@ const props = withDefaults(
 
 const { locale, setLocale, isTranslated, t } = useLocale()
 
-/**
- * The list is far wider than the closed control so the native name, the
- * English name and the “translated” badge all fit on one line. The compact
- * header button gets a fixed panel width; the full control grows past its own
- * box but never past a narrow viewport.
- *
- * Below 425px the header has no room for a 152px control beside four other
- * buttons, so the compact trigger drops to the flag alone (see
- * `trigger-label-class`) and the panel is capped to the viewport instead.
- */
 const menuClass = computed(() =>
   props.variant === 'compact'
     ? 'w-[22rem] max-w-[calc(100vw-2rem)]'

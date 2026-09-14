@@ -31,6 +31,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { ApexOptions } from 'apexcharts'
 import VueApexCharts from 'vue3-apexcharts'
 import { usePlanner } from '@/composables/usePlanner'
 
@@ -51,7 +52,7 @@ const onTrack = computed(() => {
   return current === null || current <= burndown.value.ideal[lastIndex] + 4
 })
 
-const options = computed(() => ({
+const options = computed<ApexOptions>(() => ({
   chart: {
     fontFamily: 'Outfit, sans-serif',
     type: 'line',
@@ -66,7 +67,7 @@ const options = computed(() => ({
     horizontalAlign: 'left',
     fontFamily: 'Outfit, sans-serif',
     labels: { colors: '#98A2B3' },
-    markers: { radius: 99 },
+    markers: { shape: 'circle' },
   },
   grid: {
     borderColor: 'rgba(152, 162, 179, 0.2)',

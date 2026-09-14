@@ -19,6 +19,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { ApexOptions } from 'apexcharts'
 import VueApexCharts from 'vue3-apexcharts'
 import { usePlanner } from '@/composables/usePlanner'
 
@@ -35,7 +36,7 @@ const average = computed(() => {
   return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
 })
 
-const options = computed(() => ({
+const options = computed<ApexOptions>(() => ({
   chart: { fontFamily: 'Outfit, sans-serif', type: 'bar', toolbar: { show: false } },
   colors: ['#C2D6FF', '#465FFF'],
   plotOptions: { bar: { columnWidth: '45%', borderRadius: 5, borderRadiusApplication: 'end' } },
@@ -45,7 +46,7 @@ const options = computed(() => ({
     horizontalAlign: 'left',
     fontFamily: 'Outfit, sans-serif',
     labels: { colors: '#98A2B3' },
-    markers: { radius: 99 },
+    markers: { shape: 'circle' },
   },
   grid: {
     borderColor: 'rgba(152, 162, 179, 0.2)',
